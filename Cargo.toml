@@ -1,0 +1,10 @@
+[package]
+name = "alphazero"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+
+[workspace]
+members = ["alphazero_chess","mcts", "alphazero_tictactoe", "alphazero_nn"]
