@@ -39,6 +39,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "alphazero_player"
+version = "0.1.0"
+
+[[package]]
 name = "alphazero_tictactoe"
 version = "0.1.0"
 dependencies = [

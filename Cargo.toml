@@ -7,4 +7,4 @@ edition = "2024"
 
 
 [workspace]
-members = ["alphazero_chess","mcts", "alphazero_tictactoe", "alphazero_nn"]
+members = ["alphazero_chess","mcts", "alphazero_tictactoe", "alphazero_nn", "alphazero_player"]

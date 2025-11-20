@@ -346,7 +346,6 @@ mod tests {
 
     #[test]
     fn test_alphazero_nn_forward() -> Result<()> {
-        let start = std::time::Instant::now();
         let device = Device::cuda_if_available(0)?;
         let varmap = VarMap::new();
         let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
@@ -362,13 +361,24 @@ mod tests {
 
         let model = AlphaZeroNN::new(config, vs)?;
 
-        let input = Tensor::randn(1.0f32, 2.0, &[1, 119, 8, 8], &device)?;
-        let (policy_output, value_output) = model.forward_t(&input, false)?;
+        let batch_size = 200;
+        // 5 seconds per move.
 
-        println!("Forward pass took {:?}", start.elapsed());
+        let start = std::time::Instant::now();
+        for i in 0..800 {
+            let begin = std::time::Instant::now();
+            let input = Tensor::randn(1.0f32, 2.0, &[batch_size, 119, 8, 8], &device)?;
+            let (policy_output, value_output) = model.forward_t(&input, false)?;
 
-        assert_eq!(policy_output.shape(), &Shape::from_dims(&[1, 73, 8, 8]));
-        assert_eq!(value_output.shape(), &Shape::from_dims(&[1, 1]));
+            println!("Forward pass took {:?}", start.elapsed());
+            println!("Single forward pass {} took {:?}", i, begin.elapsed());
+
+            assert_eq!(
+                policy_output.shape(),
+                &Shape::from_dims(&[batch_size, 73, 8, 8])
+            );
+            assert_eq!(value_output.shape(), &Shape::from_dims(&[batch_size, 1]));
+        }
 
         Ok(())
     }
