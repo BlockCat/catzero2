@@ -1,6 +1,29 @@
 [package]
 name = "alphazero_player"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+actix-web = "4.9"
+actix-rt = "2.10"
+tokio = { version = "1.42", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Workspace dependencies
+mcts = { path = "../mcts" }
+alphazero_nn = { path = "../alphazero_nn" }
+alphazero_chess = { path = "../alphazero_chess", optional = true}
+
+# Neural network
+candle-core = { git = "https://github.com/huggingface/candle.git" }
+candle-nn = { git = "https://github.com/huggingface/candle.git" }
+
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[features]
+default = ["cuda", "alphazero_chess"]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "alphazero_nn/cuda"]
