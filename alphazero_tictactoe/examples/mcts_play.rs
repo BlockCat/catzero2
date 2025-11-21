@@ -49,7 +49,7 @@ fn main() {
 struct TicTacToeStateEvaluation;
 
 impl StateEvaluation<TicTacToe> for TicTacToeStateEvaluation {
-    fn evaluation(&self, state: &TicTacToe) -> mcts::ModelEvaluation {
+    async fn evaluation(&self, state: &TicTacToe, _: &[TicTacToe]) -> mcts::ModelEvaluation {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
         let policy = if action_count > 0 {

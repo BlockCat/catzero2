@@ -1,9 +1,6 @@
-use std::{
-    fmt::{Debug, Display},
-    time::Duration,
-};
-
 use rand::{rng, seq::IteratorRandom};
+use std::{fmt::Debug, time::Duration};
+
 pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
 pub use tree::{DefaultAdjacencyTree, TreeHolder, TreeIndex};
 
@@ -48,31 +45,44 @@ impl<
         }
     }
 
+    pub async fn search_for_iterations_async(&self, state: &S, iterations: usize) -> Option<A> {
+        let mut tree = TH::default();
+        tree.init_root_node();
+        for _ in 0..iterations {
+            self.search_once(state, &mut tree).await;
+        }
+
+        Self::best_from_tree(tree)
+    }
+
     pub fn search_for_iterations(&self, state: &S, iterations: usize) -> Option<A> {
         let mut tree = TH::default();
         tree.init_root_node();
         for _ in 0..iterations {
-            self.search_once(state, &mut tree);
+            futures::executor::block_on(self.search_once(state, &mut tree));
         }
 
-        // println!("MCTS completed {} iterations", iterations);
-        // let count = tree.children_visits(TreeIndex::root());
-        // let rewards = tree.children_rewards(TreeIndex::root());
-        // for (i, c) in count.iter().enumerate() {
-        //     let action = tree.action(tree.child_index(TreeIndex::root(), i));
-        //     println!("Action: {:?}, \tvisit: {}\t reward: {}", action, c, rewards[i] / *c as f32);
-
-        // }
 
         Self::best_from_tree(tree)
     }
+
+        pub async fn search_for_duration_async(&self, state: &S, duration: Duration) -> Option<A> {
+            let start = std::time::Instant::now();
+            let mut tree = TH::default();
+            tree.init_root_node();
+            while start.elapsed() < duration {
+                self.search_once(state, &mut tree).await;
+            }
+    
+            Self::best_from_tree(tree)
+        }
 
     pub fn search_for_duration(&self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
         let mut tree = TH::default();
         tree.init_root_node();
         while start.elapsed() < duration {
-            self.search_once(state, &mut tree);
+            futures::executor::block_on(self.search_once(state, &mut tree));
         }
 
         Self::best_from_tree(tree)
@@ -108,24 +118,25 @@ impl<
         Some(tree.action(best_child))
     }
 
-    fn search_once(&self, state: &S, tree: &mut TH) {
-        let (node, path, state) = self.selection(state, tree);
+    async fn search_once(&self, state: &S, tree: &mut TH) {
+        let (node, path, state, previous_state) = self.selection(state, tree);
 
         if let Some(reward) = state.is_terminal() {
             self.backpropagation(tree, path, reward);
             return;
         }
 
-        let node_evaluation: ModelEvaluation = self.state_evaluation.evaluation(&state);
+        let node_evaluation: ModelEvaluation = self.state_evaluation.evaluation(&state, &previous_state).await;
 
         self.expansion(tree, &state, node, node_evaluation.policy());
         self.backpropagation(tree, path, node_evaluation.value());
     }
 
-    fn selection(&self, state: &S, tree: &mut TH) -> (TreeIndex, Vec<TreeIndex>, S) {
+    fn selection(&self, state: &S, tree: &mut TH) -> (TreeIndex, Vec<TreeIndex>, S, Vec<S>) {
         let mut current_index = TreeIndex::root();
         let mut path = Vec::new();
         let mut state = state.clone();
+        let mut previous_state = Vec::new();
 
         path.push(current_index);
 
@@ -137,9 +148,10 @@ impl<
             current_index = next_index;
             path.push(current_index);
 
-            state = state.take_action(action)
+            previous_state.push(state.clone());
+            state = state.take_action(action);
         }
-        (current_index, path, state)
+        (current_index, path, state , previous_state)
     }
 
     fn expansion(&self, tree: &mut TH, state: &S, node: TreeIndex, policy: &[f32]) {
@@ -171,7 +183,7 @@ pub trait GameState: Clone {
     fn is_terminal(&self) -> Option<f64>;
 }
 pub trait StateEvaluation<S> {
-    fn evaluation(&self, state: &S) -> ModelEvaluation;
+    async fn evaluation(&self, state: &S, previous_state: &[S]) -> ModelEvaluation;
 }
 
 pub struct ModelEvaluation {
@@ -251,7 +263,7 @@ mod tests {
     }
 
     impl StateEvaluation<TestState> for TestStateEvaluation {
-        fn evaluation(&self, _state: &TestState) -> ModelEvaluation {
+        async fn evaluation(&self, _state: &TestState, _previous_state: &[TestState]) -> ModelEvaluation {
             ModelEvaluation::new(vec![0.0; 20], 0.0)
         }
     }

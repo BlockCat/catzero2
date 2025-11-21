@@ -19,13 +19,23 @@ pub trait SelectionStrategy<S, A> {
 
 mod alphazero {
     use super::*;
-    pub struct AlphaZeroSelectionStrategy<S, A> {
+    pub struct AlphaZeroSelectionStrategy {
         c1: f32,
         c2: f32,
-        _phantom: std::marker::PhantomData<(S, A)>,
+        // _phantom: std::marker::PhantomData<(S, A)>,
     }
 
-    impl<S, A> SelectionStrategy<S, A> for AlphaZeroSelectionStrategy<S, A> {
+    impl AlphaZeroSelectionStrategy {
+        pub fn new(c1: f32, c2: f32) -> Self {
+            AlphaZeroSelectionStrategy {
+                c1,
+                c2,
+                // _phantom: std::marker::PhantomData,
+            }
+        }
+    }
+
+    impl<S, A> SelectionStrategy<S, A> for AlphaZeroSelectionStrategy {
         fn select_child(
             &self,
             tree: &impl TreeHolder<A>,
