@@ -6,7 +6,7 @@ fn main() {
     println!("Random play example for Tic Tac Toe");
     let selection_strategy = mcts::selection::StandardSelectionStrategy::new(1.4);
     let state_evaluation = ChessStateEvaluation;
-    let mtcs = mcts::MCTS::<
+    let mut mtcs = mcts::MCTS::<
         ChessWrapper,
         ChessMove,
         mcts::DefaultAdjacencyTree<ChessMove>,
@@ -26,6 +26,12 @@ fn main() {
                 std::time::Duration::from_secs(4),
             )
             .expect("Could not find move?");
+
+        println!("Known positions: {}", mtcs.positions_expanded());
+
+        mtcs.subtree_pruning(best_move.clone());
+
+        println!("Known positions after pruning: {}", mtcs.positions_expanded());
         // let best_move = mtcs
         //     .search_for_iterations(&game, 6000_000)
         //     .expect("Could not find move?");

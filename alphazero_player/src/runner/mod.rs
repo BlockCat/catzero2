@@ -1,12 +1,14 @@
-use std::{mem::replace, sync::Arc};
-
 use crate::batcher::InferenceRequest;
 use tokio::{
     runtime::{Handle, Runtime},
-    task::{JoinHandle, JoinSet, spawn_blocking},
+    task::JoinHandle,
 };
+use tokio_util::sync::CancellationToken;
 
-pub struct RunnerHandle(JoinHandle<Result<(), anyhow::Error>>);
+pub struct RunnerHandle {
+    task: JoinHandle<Result<(), anyhow::Error>>,
+    cancellation_token: CancellationToken,
+}
 
 #[derive(Debug, Clone)]
 pub struct RunnerConfig {
@@ -55,11 +57,17 @@ impl RunnerService {
         }
         let config = self.config.clone();
         let rt = self.rt.handle().clone();
+        let cancellation_token = CancellationToken::new();
+        let cancellation_token_clone = cancellation_token.clone();
 
-        let handle = tokio::spawn(async move { RunnerService::start_async(config, rt).await });
+        let handle = tokio::spawn(async move {
+            RunnerService::start_async(config, rt, cancellation_token_clone).await
+        });
 
-        let runner_handle = RunnerHandle(handle);
-        self.handle = Some(runner_handle);
+        self.handle = Some(RunnerHandle {
+            task: handle,
+            cancellation_token,
+        });
 
         Ok(())
     }
@@ -67,27 +75,36 @@ impl RunnerService {
     pub fn stop(&mut self) -> bool {
         if let Some(handle) = self.handle.take() {
             tracing::info!("Stopping RunnerService");
-            drop(handle);            
+            drop(handle);
             true
         } else {
             false
         }
     }
 
-    pub async fn start_async(config: RunnerConfig, rt: Handle) -> Result<(), anyhow::Error> {
+    pub async fn start_async(
+        config: RunnerConfig,
+        rt: Handle,
+        cancellation_token: CancellationToken,
+    ) -> Result<(), anyhow::Error> {
         tracing::info!("RunnerService starting");
-        let num_iterations = config.num_iterations;
+        let _num_iterations = config.num_iterations;
         let parallel_games = config.parallel_games;
         let channel = config.channel.clone();
 
         let mut handles = Vec::with_capacity(parallel_games);
 
-
         for i in 0..parallel_games {
-            let x = channel.clone();
+            let _channel = channel.clone();
+            let cancellation_token = cancellation_token.clone();
             let handle = rt.spawn(async move {
-                let x = x;
                 loop {
+                    // Check for cancellation
+                    if cancellation_token.is_cancelled() {
+                        tracing::info!("Runner {} received cancellation signal, stopping...", i);
+                        break;
+                    }
+
                     // Here would be the game logic using MCTS and the channel for inference requests
                     tracing::info!("Runner {} is playing a game...", i);
 
@@ -98,26 +115,34 @@ impl RunnerService {
             handles.push(handle);
         }
 
-
-        for handle in handles {
-            let _ = handle.await;
+        // Wait for cancellation or for all tasks to complete
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                tracing::info!("RunnerService received cancellation, waiting for tasks to finish");
+            }
+            _ = async {
+                for handle in handles {
+                    let _ = handle.await;
+                }
+            } => {
+                tracing::info!("All runner tasks completed");
+            }
         }
 
-        unreachable!()
+        Ok(())
     }
 }
 
 impl Drop for RunnerHandle {
     fn drop(&mut self) {
-        tracing::info!("Runner stopping, quitting tasks");
-        self.0.abort();
+        tracing::info!("Runner stopping, cancelling tasks");
+        self.cancellation_token.cancel();
+        self.task.abort();
     }
 }
 
 impl Drop for RunnerService {
     fn drop(&mut self) {
         tracing::info!("RunnerService stopped");
-        
-
     }
 }

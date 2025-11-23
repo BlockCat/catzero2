@@ -157,19 +157,25 @@ mod tests {
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();
 
         let best_move = mtcs
-            .search_for_iterations(&game, 100_000)
+            .search_for_iterations(&game, 10_000)
             .expect("Could not find move?");
+        println!("Known positions: {}", mtcs.positions_expanded());
+        mtcs.subtree_pruning(best_move.clone());
+        println!("Known positions after pruning: {}", mtcs.positions_expanded());
         assert_eq!(best_move.to_string(), "e4f6");
 
         game = game.take_action(best_move);
         let best_move = mtcs
-            .search_for_iterations(&game, 100_000)
+            .search_for_iterations(&game, 10_000)
             .expect("Could not find move?");
+        println!("Known positions: {}", mtcs.positions_expanded());
+        mtcs.subtree_pruning(best_move.clone());
+        println!("Known positions after pruning: {}", mtcs.positions_expanded());
         assert_eq!(best_move.to_string(), "g7f6");
 
         game = game.take_action(best_move);
         let best_move = mtcs
-            .search_for_iterations(&game, 100_000)
+            .search_for_iterations(&game, 10_000)
             .expect("Could not find move?");
         assert_eq!(best_move.to_string(), "c2h7");
     }

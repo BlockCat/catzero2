@@ -39,21 +39,23 @@ impl<
 > MCTS<S, A, TH, SS, SE>
 {
     pub fn new(selection_strategy: SS, state_evaluation: SE, discount_factor: f64) -> Self {
+        let mut tree = TH::default();
+        tree.init_root_node();
         MCTS {
             _phantom: std::marker::PhantomData,
             selection_strategy,
             state_evaluation,
             discount_factor,
-            tree: TH::default(),
+            tree,
         }
+    }
+
+    pub fn positions_expanded(&self) -> usize {
+        self.tree.node_count()
     }
 
     pub async fn search_for_iterations_async(&mut self, state: &S, iterations: usize) -> Option<A> {
         let tree = &mut self.tree;
-
-        if tree.is_empty() {
-            tree.init_root_node();
-        }
 
         for _ in 0..iterations {
             self.search_once(state).await;
@@ -63,8 +65,8 @@ impl<
     }
 
     pub fn search_for_iterations(&mut self, state: &S, iterations: usize) -> Option<A> {
-        let mut tree = TH::default();
-        tree.init_root_node();
+        let tree = &mut self.tree;
+
         for _ in 0..iterations {
             futures::executor::block_on(self.search_once(state));
         }
@@ -74,8 +76,8 @@ impl<
 
     pub async fn search_for_duration_async(&mut self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
-        let mut tree = TH::default();
-        tree.init_root_node();
+        let tree = &mut self.tree;
+
         while start.elapsed() < duration {
             self.search_once(state).await;
         }
@@ -85,8 +87,9 @@ impl<
 
     pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
-        let mut tree = TH::default();
-        tree.init_root_node();
+
+        let tree = &mut self.tree;
+
         while start.elapsed() < duration {
             futures::executor::block_on(self.search_once(state));
         }
@@ -196,7 +199,6 @@ impl<
     }
 
     pub fn get_action_probabilities(&self) -> Vec<(A, f32)> {
-
         let actions = self.tree.child_actions(TreeIndex::root());
         let rewards = self.tree.children_rewards(TreeIndex::root());
         let visits = self.tree.children_visits(TreeIndex::root());
