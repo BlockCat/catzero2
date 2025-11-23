@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use crate::{Game, batcher::BatcherConfig, runner::{self, RunnerService}};
 use actix_web::{http::header::ContentType, *};
+use alphazero_chess::ChessWrapper;
 use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
     data: web::Data<crate::AppState>,
     batch_response: web::Data<BatcherConfig>,
-    runner_service: web::Data<Arc<Mutex<RunnerService>>>,
+    runner_service: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>,
     // play_actor: web::Data<Addr<PlayActor>>,
     // batch_actor: web::Data<Addr<BatchActor>>,
 ) -> ServerStatus {
@@ -48,7 +49,7 @@ async fn status(
 }
 
 #[get("/start_play")]
-async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
+async fn start_play(data: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>) -> HttpResponse {
     let result = data.lock().await.start();
     if let Err(e) = result {
         return HttpResponse::InternalServerError().json(ServerMessage {
@@ -62,7 +63,7 @@ async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse 
 }
 
 #[get("/stop_play")]
-async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
+async fn stop_play(data: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>) -> HttpResponse {
     let stopped = data.lock().await.stop();
     if stopped {
         HttpResponse::Ok().json(ServerMessage {

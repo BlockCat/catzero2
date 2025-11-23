@@ -57,7 +57,8 @@ impl<
     pub async fn search_for_iterations_async(&mut self, state: &S, iterations: usize) -> Option<A> {
         let tree = &mut self.tree;
 
-        for _ in 0..iterations {
+        let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
+        for _ in 0..positions_left {
             self.search_once(state).await;
         }
 
@@ -67,7 +68,8 @@ impl<
     pub fn search_for_iterations(&mut self, state: &S, iterations: usize) -> Option<A> {
         let tree = &mut self.tree;
 
-        for _ in 0..iterations {
+        let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
+        for _ in 0..positions_left {
             futures::executor::block_on(self.search_once(state));
         }
 
@@ -76,7 +78,6 @@ impl<
 
     pub async fn search_for_duration_async(&mut self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
-        let tree = &mut self.tree;
 
         while start.elapsed() < duration {
             self.search_once(state).await;
@@ -87,8 +88,6 @@ impl<
 
     pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
-
-        let tree = &mut self.tree;
 
         while start.elapsed() < duration {
             futures::executor::block_on(self.search_once(state));
@@ -222,7 +221,7 @@ impl<
     }
 }
 
-pub trait GameState: Clone {
+pub trait GameState: Clone + Default {
     type Action;
 
     fn get_possible_actions(&self) -> Vec<Self::Action>;

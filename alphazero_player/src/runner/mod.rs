@@ -1,31 +1,61 @@
 use crate::batcher::InferenceRequest;
+use mcts::GameState;
 use tokio::{
     runtime::{Handle, Runtime},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
 
+mod chess;
+
+pub trait SingleRunner {
+    type GameState: GameState + Clone + Send + Sync + 'static;
+
+    async fn play_game(
+        &self,
+        cancellation_token: CancellationToken,
+    ) -> Result<GamePlayed<Self::GameState>, RunnerError>;
+}
+
+pub enum RunnerError {
+    GameError(anyhow::Error),
+    Cancellation,
+}
+
 pub struct RunnerHandle {
     task: JoinHandle<Result<(), anyhow::Error>>,
     cancellation_token: CancellationToken,
 }
 
+#[derive(Clone, Debug)]
+pub struct GamePlayed<A: GameState> {
+    pub states: Vec<A>,
+    pub policies: Vec<Vec<(A::Action, f32)>>,
+    pub taken_actions: Vec<A::Action>,
+    pub value: f32,
+    pub winner: Option<i32>,
+}
+
+unsafe impl <A: GameState + Send> Send for GamePlayed<A> {}
+unsafe impl <A: GameState + Sync> Sync for GamePlayed<A> {}
+
 #[derive(Debug, Clone)]
-pub struct RunnerConfig {
+pub struct RunnerConfig<A: GameState + Clone> {
     pub num_iterations: usize,
     pub threads: usize,
     pub parallel_games: usize,
     pub channel: tokio::sync::mpsc::Sender<InferenceRequest>,
+    pub game_played_channel: tokio::sync::mpsc::Sender<GamePlayed<A>>,
 }
 
-pub struct RunnerService {
-    config: RunnerConfig,
+pub struct RunnerService<A: GameState + Clone> {
+    config: RunnerConfig<A>,
     handle: Option<RunnerHandle>,
     rt: Runtime,
 }
 
-impl RunnerService {
-    pub fn new(config: RunnerConfig) -> Self {
+impl<A: GameState + Clone + Send + Sync + 'static> RunnerService<A> {
+    pub fn new(config: RunnerConfig<A>) -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(config.threads)
             .enable_time()
@@ -83,7 +113,7 @@ impl RunnerService {
     }
 
     pub async fn start_async(
-        config: RunnerConfig,
+        config: RunnerConfig<A>,
         rt: Handle,
         cancellation_token: CancellationToken,
     ) -> Result<(), anyhow::Error> {
@@ -97,19 +127,14 @@ impl RunnerService {
         for i in 0..parallel_games {
             let _channel = channel.clone();
             let cancellation_token = cancellation_token.clone();
+
             let handle = rt.spawn(async move {
-                loop {
-                    // Check for cancellation
+                'outer: loop {
                     if cancellation_token.is_cancelled() {
-                        tracing::info!("Runner {} received cancellation signal, stopping...", i);
-                        break;
+                        tracing::info!("Runner task {} received cancellation, exiting", i);
+                        break 'outer;
                     }
-
-                    // Here would be the game logic using MCTS and the channel for inference requests
-                    tracing::info!("Runner {} is playing a game...", i);
-
-                    // Simulate some work
-                    tokio::time::sleep(std::time::Duration::from_millis(i as u64 + 500)).await
+                  
                 }
             });
             handles.push(handle);
@@ -141,7 +166,7 @@ impl Drop for RunnerHandle {
     }
 }
 
-impl Drop for RunnerService {
+impl<A: GameState + Clone> Drop for RunnerService<A> {
     fn drop(&mut self) {
         tracing::info!("RunnerService stopped");
     }

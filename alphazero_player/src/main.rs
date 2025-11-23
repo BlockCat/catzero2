@@ -6,6 +6,7 @@ use actix_web::{
     web::{scope, Data, ServiceConfig},
     App, HttpServer,
 };
+use alphazero_chess::ChessWrapper;
 use alphazero_nn::{AlphaZeroNN, PolicyOutputType};
 use candle_core::{DType, Device, Shape};
 use candle_nn::{VarBuilder, VarMap};
@@ -13,7 +14,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     // actors::{batch_actor::BatchActor, play_actor::PlayActor},
-    batcher::{BatchService, BatcherConfig},
+    batcher::{BatchService, BatcherConfig}, runner::GamePlayed,
 };
 
 // mod actors;
@@ -79,11 +80,14 @@ async fn main() -> std::io::Result<()> {
 
     let (batcher, sender) = BatchService::new(batch_config.clone(), model);
 
+    let (games_played_tx, _games_played_rx) = tokio::sync::mpsc::channel::<GamePlayed<ChessWrapper>>(1000);
+
     let runner_config = runner::RunnerConfig {
         num_iterations: 800,
         threads: play_cores,
         parallel_games,
         channel: sender,
+        game_played_channel: games_played_tx,
     };
 
     

@@ -1,10 +1,12 @@
 use candle_core::{Tensor, D};
+use mcts::GameState;
 use tokio::task::JoinHandle;
 
 pub struct BatcherHandle(JoinHandle<Result<(), anyhow::Error>>);
 
 #[derive(Debug)]
 pub struct InferenceRequest {
+    pub player_id: u32,
     pub state_tensor: Tensor,
     pub response_channel: tokio::sync::oneshot::Sender<InferenceResponse>,
 }
@@ -14,6 +16,7 @@ pub struct InferenceResponse {
     pub output_tensor: Tensor,
     pub value: f32,
 }
+
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct BatcherConfig {
@@ -100,7 +103,6 @@ impl Drop for BatcherHandle {
     fn drop(&mut self) {
         tracing::info!("BatchService stopping, quitting batcher task");
         self.0.abort();
-        
     }
 }
 
