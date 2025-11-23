@@ -48,9 +48,9 @@ mod alphazero {
             let children_priors = tree.children_priors(index);
             let scores = alpha_zero_scores(
                 parent_visit,
-                &children_visits,
-                &children_rewards,
-                &children_priors,
+                children_visits,
+                children_rewards,
+                children_priors,
                 self.c1,
                 self.c2,
             );
@@ -68,7 +68,7 @@ mod alphazero {
                 .expect("No best index found");
 
             let child_index = tree.child_index(index, best_index);
-            let action = tree.action(child_index.clone());
+            let action = tree.action(child_index);
 
             (action, child_index)
         }
@@ -85,10 +85,10 @@ mod alphazero {
         let exploration_term = f32::ln((1.0 + parent_visit + c1) / c1) + c2;
         let sqrt_parent = parent_visit.sqrt();
 
-        let average_rewards = average_rewards(&children_rewards, &children_visits);
+        let average_rewards = average_rewards(children_rewards, children_visits);
         let upper_bounds = calculate_upper_bounds(
-            &children_visits,
-            &children_priors,
+            children_visits,
+            children_priors,
             exploration_term,
             sqrt_parent,
         );
@@ -184,7 +184,7 @@ mod random {
                 .choose(&mut rng())
                 .expect("No children to choose from");
             let child_index = tree.child_index(index, chosen_index);
-            let action = tree.action(child_index.clone());
+            let action = tree.action(child_index);
             (action, child_index)
         }
     }
@@ -242,7 +242,7 @@ mod standard {
                 .expect("No best index found");
 
             let child_index = tree.child_index(index, best_index);
-            let action = tree.action(child_index.clone());
+            let action = tree.action(child_index);
 
             (action, child_index)
         }

@@ -161,7 +161,7 @@ impl<
             panic!("Node is in non terminal state, so actions are expected");
         }
 
-        tree.expand_node(node, &possible_actions, &policy);
+        tree.expand_node(node, &possible_actions, policy);
     }
 
     fn backpropagation(&self, tree: &mut TH, path: Vec<TreeIndex>, mut reward: f64) {
@@ -171,7 +171,11 @@ impl<
             reward = -reward * self.discount_factor;
         }
     }
+
+
+
 }
+
 
 pub trait GameState: Clone {
     type Action;

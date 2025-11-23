@@ -106,24 +106,22 @@ impl TicTacToe {
     pub fn check_winner(&self) -> GameResult {
         // Check rows
         for row in 0..3 {
-            if let Cell::Occupied(player) = self.board[row][0] {
-                if self.board[row][1] == Cell::Occupied(player)
+            if let Cell::Occupied(player) = self.board[row][0]
+                && self.board[row][1] == Cell::Occupied(player)
                     && self.board[row][2] == Cell::Occupied(player)
                 {
                     return GameResult::Win(player);
                 }
-            }
         }
 
         // Check columns
         for col in 0..3 {
-            if let Cell::Occupied(player) = self.board[0][col] {
-                if self.board[1][col] == Cell::Occupied(player)
+            if let Cell::Occupied(player) = self.board[0][col]
+                && self.board[1][col] == Cell::Occupied(player)
                     && self.board[2][col] == Cell::Occupied(player)
                 {
                     return GameResult::Win(player);
                 }
-            }
         }
 
         // Check diagonals

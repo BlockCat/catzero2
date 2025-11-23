@@ -1,10 +1,5 @@
-use std::fmt::Debug;
 
-use actix::{Actor, Addr, AsyncContext, Context, Handler, Recipient, WrapFuture};
-use mcts::{
-    AlphaZeroSelectionStrategy, GameState, ModelEvaluation, SelectionStrategy, StateEvaluation,
-    TreeHolder, MCTS,
-};
+use actix::{Actor, AsyncContext, Context, Handler, Recipient};
 use tracing::info;
 
 pub use messages::{InfoRequest, InfoResponse, StartPlay, StopPlay};
@@ -44,21 +39,21 @@ impl Actor for PlayActor {
 impl Handler<messages::StartPlay> for PlayActor {
     type Result = ();
 
-    fn handle(&mut self, _msg: messages::StartPlay, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: messages::StartPlay, _ctx: &mut Self::Context) -> Self::Result {
         if self.fut.is_some() {
             info!("Play is already running");
             return;
         }
 
         info!("Starting play with {} cores", self.num_cores);
-        let num_cores = self.num_cores;
+        let _num_cores = self.num_cores;
         let parallel_games = self.parallel_games;
 
         let device =
             candle_core::Device::cuda_if_available(0).expect("Could not get inference device");
 
-        for id in 0..parallel_games {
-            let addr =
+        for _id in 0..parallel_games {
+            let _addr =
                 ChessRunnerActor::new(1.0, 2.0, 1.0, self.batcher.clone(), device.clone()).start();
         }
     }

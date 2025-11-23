@@ -2,7 +2,7 @@ use actix::{Actor, Context, Handler};
 use std::time::Duration;
 use tracing::{info, trace};
 
-pub use messages::{InferenceRequest, InfoRequest, InfoResponse, SwitchPlayMode};
+pub use messages::{InferenceRequest, InfoRequest, InfoResponse};
 
 use crate::actors::batch_actor::messages::InferenceResponse;
 

@@ -60,7 +60,7 @@ fn main() {
 struct ChessStateEvaluation;
 
 impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
-    fn evaluation(&self, state: &ChessWrapper) -> mcts::ModelEvaluation {
+    async fn evaluation(&self, state: &ChessWrapper, previous_state: &[ChessWrapper]) -> mcts::ModelEvaluation {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
         let policy = if action_count > 0 {

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 use actix::Addr;
 use actix_web::{http::header::ContentType, *};
@@ -27,7 +26,7 @@ async fn status(
         .expect("Could not get batch actor info");
 
     let play_info = if play_response.running {
-        let mut models = Vec::new();
+        let models = Vec::new();
 
         
 

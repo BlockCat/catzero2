@@ -364,21 +364,14 @@ mod tests {
         let batch_size = 200;
         // 5 seconds per move.
 
-        let start = std::time::Instant::now();
-        for i in 0..800 {
-            let begin = std::time::Instant::now();
-            let input = Tensor::randn(1.0f32, 2.0, &[batch_size, 119, 8, 8], &device)?;
-            let (policy_output, value_output) = model.forward_t(&input, false)?;
+        let input = Tensor::randn(1.0f32, 2.0, &[batch_size, 119, 8, 8], &device)?;
+        let (policy_output, value_output) = model.forward_t(&input, false)?;
 
-            println!("Forward pass took {:?}", start.elapsed());
-            println!("Single forward pass {} took {:?}", i, begin.elapsed());
-
-            assert_eq!(
-                policy_output.shape(),
-                &Shape::from_dims(&[batch_size, 73, 8, 8])
-            );
-            assert_eq!(value_output.shape(), &Shape::from_dims(&[batch_size, 1]));
-        }
+        assert_eq!(
+            policy_output.shape(),
+            &Shape::from_dims(&[batch_size, 73, 8, 8])
+        );
+        assert_eq!(value_output.shape(), &Shape::from_dims(&[batch_size, 1]));
 
         Ok(())
     }
