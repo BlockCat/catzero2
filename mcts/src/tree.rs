@@ -19,6 +19,9 @@ impl TreeIndex {
 }
 
 pub trait TreeHolder<A>: Default {
+    /// Returns whether the tree is empty.
+    fn is_empty(&self) -> bool;
+
     /// Initializes the root node of the tree.
     fn init_root_node(&mut self);
     /// Returns whether the node at `index` is fully expanded.
@@ -46,6 +49,8 @@ pub trait TreeHolder<A>: Default {
     fn children_visits(&self, index: TreeIndex) -> &[u32];
     /// Returns the rewards of the children of the node at `index`.
     fn children_rewards(&self, index: TreeIndex) -> &[f32];
+    /// Returns the actions of the children of the node at `index`.
+    fn child_actions(&self, index: TreeIndex) -> &[Option<A>];
 
     /// Returns the priors of the children of the node at `index`.
     fn children_priors(&self, index: TreeIndex) -> &[f32];
@@ -53,6 +58,7 @@ pub trait TreeHolder<A>: Default {
     fn subtree(&self, index: TreeIndex) -> Self;
 }
 
+#[derive(Clone)]
 pub struct DefaultAdjacencyTree<A> {
     pub actions: Vec<Option<A>>,
     pub visit_counts: Vec<u32>,
@@ -162,6 +168,15 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         &self.policy[start_index..start_index + count]
     }
 
+    fn child_actions(&self, index: TreeIndex) -> &[Option<A>] {
+        let start_index = self.children_start_index[index.index()]
+            .expect("Node is not expanded")
+            .index();
+        let count = self.children_count[index.index()] as usize;
+
+        &self.actions[start_index..start_index + count]
+    }
+
     fn subtree(&self, index: TreeIndex) -> Self {
         let mut new_tree = DefaultAdjacencyTree::default();
 
@@ -199,6 +214,11 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
 
         new_tree
     }
+
+    fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
+    
 }
 #[cfg(test)]
 mod tests {

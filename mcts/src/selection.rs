@@ -19,6 +19,7 @@ pub trait SelectionStrategy<S, A> {
 
 mod alphazero {
     use super::*;
+    #[derive(Clone)]
     pub struct AlphaZeroSelectionStrategy {
         c1: f32,
         c2: f32,

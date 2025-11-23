@@ -1,9 +1,6 @@
-use std::str::FromStr;
-
 use alphazero_chess::ChessWrapper;
-use chess::{Board, ChessMove, Color, Game};
+use chess::{ChessMove, Game};
 use mcts::{GameState, StateEvaluation, selection::StandardSelectionStrategy};
-use rand::seq::IteratorRandom;
 
 fn main() {
     println!("Random play example for Tic Tac Toe");
@@ -53,14 +50,16 @@ fn main() {
         },
         _ => unreachable!(),
     }
-
-    
 }
 
 struct ChessStateEvaluation;
 
 impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
-    async fn evaluation(&self, state: &ChessWrapper, previous_state: &[ChessWrapper]) -> mcts::ModelEvaluation {
+    async fn evaluation(
+        &self,
+        state: &ChessWrapper,
+        _previous_state: &[ChessWrapper],
+    ) -> mcts::ModelEvaluation {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
         let policy = if action_count > 0 {

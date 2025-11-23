@@ -1,41 +1,34 @@
+use std::sync::Arc;
 
-use actix::Addr;
+use crate::{Game, batcher::BatcherConfig, runner::{self, RunnerService}};
 use actix_web::{http::header::ContentType, *};
-
-use crate::{
-    actors::{
-        batch_actor::{self, BatchActor},
-        play_actor::{self, PlayActor, StartPlay, StopPlay},
-    },
-    Game,
-};
+use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
     data: web::Data<crate::AppState>,
-    play_actor: web::Data<Addr<PlayActor>>,
-    batch_actor: web::Data<Addr<BatchActor>>,
+    batch_response: web::Data<BatcherConfig>,
+    runner_service: web::Data<Arc<Mutex<RunnerService>>>,
+    // play_actor: web::Data<Addr<PlayActor>>,
+    // batch_actor: web::Data<Addr<BatchActor>>,
 ) -> ServerStatus {
-    let play_response = play_actor
-        .send(play_actor::InfoRequest)
-        .await
-        .expect("Could not get play info");
-    let batch_response = batch_actor
-        .send(batch_actor::InfoRequest)
-        .await
-        .expect("Could not get batch actor info");
+    // let play_response = play_actor
+    //     .send(play_actor::InfoRequest)
+    //     .await
+    //     .expect("Could not get play info");
+    // let batch_response = batch_actor
+    //     .send(batch_actor::InfoRequest)
+    //     .await
+    //     .expect("Could not get batch actor info");
+    let runner_service = runner_service.lock().await;
 
-    let play_info = if play_response.running {
-        let models = Vec::new();
-
-        
-
+    let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
-            cpu_cores: play_response.cpu_cores,
-            games_played: play_response.games_played,
+            cpu_cores: data.play_cores,
+            games_played: 0,
             total_moves: 0,
-            games_playing: 0,
-            models,
+            games_playing: runner_service.games_playing() as u32,
+            models: vec![],
         })
     } else {
         None
@@ -44,33 +37,42 @@ async fn status(
     ServerStatus {
         running: true,
         game: data.game.clone(),
-        playing: play_response.running,
+        playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {
-            batch_size: batch_response.batch_size,
+            max_batch_size: batch_response.max_batch_size,
+            min_batch_size: batch_response.min_batch_size,
             max_wait_time_ms: batch_response.max_wait.as_millis() as u64,
         },
     }
 }
 
 #[get("/start_play")]
-async fn start_play(data: web::Data<Addr<PlayActor>>) -> HttpResponse {
-    data.send(StartPlay)
-        .await
-        .expect("Failed to send StartPlay message");
+async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
+    let result = data.lock().await.start();
+    if let Err(e) = result {
+        return HttpResponse::InternalServerError().json(ServerMessage {
+            message: format!("Could not start play: {}", e),
+        });
+    }
+
     HttpResponse::Ok().json(ServerMessage {
         message: "Play started".to_string(),
     })
 }
 
 #[get("/stop_play")]
-async fn stop_play(data: web::Data<Addr<PlayActor>>) -> HttpResponse {
-    data.send(StopPlay)
-        .await
-        .expect("Failed to send StopPlay message");
-    HttpResponse::Ok().json(ServerMessage {
-        message: "Play stopped".to_string(),
-    })
+async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
+    let stopped = data.lock().await.stop();
+    if stopped {
+        HttpResponse::Ok().json(ServerMessage {
+            message: "Play stopped".to_string(),
+        })
+    } else {
+        return HttpResponse::Ok().json(ServerMessage {
+            message: "Play was not running".to_string(),
+        });
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -109,7 +111,8 @@ struct HyperParamInfo {
 
 #[derive(serde::Serialize)]
 struct BatchInfo {
-    batch_size: usize,
+    max_batch_size: usize,
+    min_batch_size: usize,
     max_wait_time_ms: u64,
 }
 

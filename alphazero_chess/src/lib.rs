@@ -125,7 +125,7 @@ mod tests {
     fn test_find_mate_in_one() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let state_evaluation = ChessStateEvaluation;
-        let mtcs = mcts::MCTS::<
+        let mut mtcs = mcts::MCTS::<
             ChessWrapper,
             ChessMove,
             mcts::DefaultAdjacencyTree<ChessMove>,
@@ -145,7 +145,7 @@ mod tests {
     fn test_find_mate_in_two() {
         let selection_strategy = StandardSelectionStrategy::new(2.4);
         let state_evaluation = ChessStateEvaluation;
-        let mtcs = mcts::MCTS::<
+        let mut mtcs = mcts::MCTS::<
             ChessWrapper,
             ChessMove,
             mcts::DefaultAdjacencyTree<ChessMove>,
@@ -177,7 +177,7 @@ mod tests {
     struct ChessStateEvaluation;
 
     impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
-        async fn evaluation(&self, state: &ChessWrapper, previous_state: &[ChessWrapper]) -> mcts::ModelEvaluation {
+        async fn evaluation(&self, state: &ChessWrapper, _previous_state: &[ChessWrapper]) -> mcts::ModelEvaluation {
             let possible_actions = state.get_possible_actions();
             let action_count = possible_actions.len();
             let policy = if action_count > 0 {

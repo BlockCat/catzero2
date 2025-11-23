@@ -1,5 +1,5 @@
 use rand::{rng, seq::IteratorRandom};
-use std::{fmt::Debug, time::Duration};
+use std::{fmt::Debug, iter::zip, time::Duration};
 
 pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
 pub use tree::{DefaultAdjacencyTree, TreeHolder, TreeIndex};
@@ -14,6 +14,7 @@ mod tree;
 /// - tree holder TH
 /// - selection strategy SS
 /// - state evaluation SE
+#[derive(Clone)]
 pub struct MCTS<S, A, TH, SS, SE>
 where
     S: GameState<Action = A>,
@@ -26,11 +27,12 @@ where
     selection_strategy: SS,
     state_evaluation: SE,
     discount_factor: f64,
+    tree: TH,
 }
 
 impl<
     S: GameState<Action = A>,
-    A: Clone + Debug,
+    A: Clone + Debug + PartialEq,
     TH: TreeHolder<A>,
     SS: SelectionStrategy<S, A>,
     SE: StateEvaluation<S>,
@@ -42,53 +44,58 @@ impl<
             selection_strategy,
             state_evaluation,
             discount_factor,
+            tree: TH::default(),
         }
     }
 
-    pub async fn search_for_iterations_async(&self, state: &S, iterations: usize) -> Option<A> {
-        let mut tree = TH::default();
-        tree.init_root_node();
-        for _ in 0..iterations {
-            self.search_once(state, &mut tree).await;
-        }
+    pub async fn search_for_iterations_async(&mut self, state: &S, iterations: usize) -> Option<A> {
+        let tree = &mut self.tree;
 
-        Self::best_from_tree(tree)
-    }
-
-    pub fn search_for_iterations(&self, state: &S, iterations: usize) -> Option<A> {
-        let mut tree = TH::default();
-        tree.init_root_node();
-        for _ in 0..iterations {
-            futures::executor::block_on(self.search_once(state, &mut tree));
-        }
-
-
-        Self::best_from_tree(tree)
-    }
-
-        pub async fn search_for_duration_async(&self, state: &S, duration: Duration) -> Option<A> {
-            let start = std::time::Instant::now();
-            let mut tree = TH::default();
+        if tree.is_empty() {
             tree.init_root_node();
-            while start.elapsed() < duration {
-                self.search_once(state, &mut tree).await;
-            }
-    
-            Self::best_from_tree(tree)
         }
 
-    pub fn search_for_duration(&self, state: &S, duration: Duration) -> Option<A> {
+        for _ in 0..iterations {
+            self.search_once(state).await;
+        }
+
+        self.best_from_tree()
+    }
+
+    pub fn search_for_iterations(&mut self, state: &S, iterations: usize) -> Option<A> {
+        let mut tree = TH::default();
+        tree.init_root_node();
+        for _ in 0..iterations {
+            futures::executor::block_on(self.search_once(state));
+        }
+
+        self.best_from_tree()
+    }
+
+    pub async fn search_for_duration_async(&mut self, state: &S, duration: Duration) -> Option<A> {
         let start = std::time::Instant::now();
         let mut tree = TH::default();
         tree.init_root_node();
         while start.elapsed() < duration {
-            futures::executor::block_on(self.search_once(state, &mut tree));
+            self.search_once(state).await;
         }
 
-        Self::best_from_tree(tree)
+        self.best_from_tree()
     }
 
-    fn best_from_tree(tree: impl TreeHolder<A>) -> Option<A> {
+    pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Option<A> {
+        let start = std::time::Instant::now();
+        let mut tree = TH::default();
+        tree.init_root_node();
+        while start.elapsed() < duration {
+            futures::executor::block_on(self.search_once(state));
+        }
+
+        self.best_from_tree()
+    }
+
+    fn best_from_tree(&self) -> Option<A> {
+        let tree = &self.tree;
         let children = tree.children_visits(TreeIndex::root());
         let children_rewards = tree.children_rewards(TreeIndex::root());
 
@@ -118,21 +125,24 @@ impl<
         Some(tree.action(best_child))
     }
 
-    async fn search_once(&self, state: &S, tree: &mut TH) {
-        let (node, path, state, previous_state) = self.selection(state, tree);
+    async fn search_once(&mut self, state: &S) {
+        let (node, path, state, previous_state) = self.selection(state, &self.tree);
 
         if let Some(reward) = state.is_terminal() {
-            self.backpropagation(tree, path, reward);
+            self.backpropagation(path, reward);
             return;
         }
 
-        let node_evaluation: ModelEvaluation = self.state_evaluation.evaluation(&state, &previous_state).await;
+        let node_evaluation: ModelEvaluation = self
+            .state_evaluation
+            .evaluation(&state, &previous_state)
+            .await;
 
-        self.expansion(tree, &state, node, node_evaluation.policy());
-        self.backpropagation(tree, path, node_evaluation.value());
+        self.expansion(&state, node, node_evaluation.policy());
+        self.backpropagation(path, node_evaluation.value());
     }
 
-    fn selection(&self, state: &S, tree: &mut TH) -> (TreeIndex, Vec<TreeIndex>, S, Vec<S>) {
+    fn selection(&self, state: &S, tree: &TH) -> (TreeIndex, Vec<TreeIndex>, S, Vec<S>) {
         let mut current_index = TreeIndex::root();
         let mut path = Vec::new();
         let mut state = state.clone();
@@ -151,31 +161,64 @@ impl<
             previous_state.push(state.clone());
             state = state.take_action(action);
         }
-        (current_index, path, state , previous_state)
+        (current_index, path, state, previous_state)
     }
 
-    fn expansion(&self, tree: &mut TH, state: &S, node: TreeIndex, policy: &[f32]) {
+    fn expansion(&mut self, state: &S, node: TreeIndex, policy: &[f32]) {
         let possible_actions = state.get_possible_actions();
 
         if possible_actions.is_empty() {
             panic!("Node is in non terminal state, so actions are expected");
         }
 
-        tree.expand_node(node, &possible_actions, policy);
+        self.tree.expand_node(node, &possible_actions, policy);
     }
 
-    fn backpropagation(&self, tree: &mut TH, path: Vec<TreeIndex>, mut reward: f64) {
+    fn backpropagation(&mut self, path: Vec<TreeIndex>, mut reward: f64) {
         for node_index in path.iter().rev() {
-            tree.update_node_value(*node_index, reward);
-            tree.increase_node_visit_count(*node_index);
+            self.tree.update_node_value(*node_index, reward);
+            self.tree.increase_node_visit_count(*node_index);
             reward = -reward * self.discount_factor;
         }
     }
 
+    pub fn subtree_pruning(&mut self, action: A) {
+        let first_child_index = TreeIndex::new(1); // first child
 
+        let action_index = self
+            .tree
+            .child_actions(TreeIndex::root())
+            .iter()
+            .position(|a| a.as_ref() == Some(&action))
+            .expect("Action not found among root children");
 
+        self.tree = self.tree.subtree(first_child_index.offset(action_index));
+    }
+
+    pub fn get_action_probabilities(&self) -> Vec<(A, f32)> {
+
+        let actions = self.tree.child_actions(TreeIndex::root());
+        let rewards = self.tree.children_rewards(TreeIndex::root());
+        let visits = self.tree.children_visits(TreeIndex::root());
+
+        zip(actions.iter(), zip(rewards.iter(), visits.iter()))
+            .filter_map(|(action_opt, (reward, visit))| {
+                if let Some(action) = action_opt {
+                    Some((
+                        action.clone(),
+                        if *visit > 0 {
+                            reward / *visit as f32
+                        } else {
+                            0.0
+                        },
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<(A, f32)>>()
+    }
 }
-
 
 pub trait GameState: Clone {
     type Action;
@@ -267,7 +310,11 @@ mod tests {
     }
 
     impl StateEvaluation<TestState> for TestStateEvaluation {
-        async fn evaluation(&self, _state: &TestState, _previous_state: &[TestState]) -> ModelEvaluation {
+        async fn evaluation(
+            &self,
+            _state: &TestState,
+            _previous_state: &[TestState],
+        ) -> ModelEvaluation {
             ModelEvaluation::new(vec![0.0; 20], 0.0)
         }
     }

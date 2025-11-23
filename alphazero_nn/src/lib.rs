@@ -3,15 +3,15 @@ use candle_nn::{
     BatchNorm, BatchNormConfig, Conv2d, Conv2dConfig, Linear, ModuleT, VarBuilder, batch_norm,
     conv2d, linear, linear_no_bias,
 };
+
 pub struct Config {
-    n_input_channels: usize,
-    n_residual_blocks: usize,
-    n_filters: usize,
+    pub n_input_channels: usize,
+    pub n_residual_blocks: usize,
+    pub n_filters: usize,
 
-    kernel_size: usize,
-    game_shape: Shape,
-
-    policy_output_type: PolicyOutputType,
+    pub kernel_size: usize,
+    pub game_shape: Shape,
+    pub policy_output_type: PolicyOutputType,
 }
 
 impl Config {

@@ -6,7 +6,7 @@ fn main() {
     println!("Random play example for Tic Tac Toe");
     let selection_strategy = mcts::selection::StandardSelectionStrategy::new(1.4);
     let state_evaluation = TicTacToeStateEvaluation;
-    let mtcs = mcts::MCTS::<
+    let mut mcts = mcts::MCTS::<
         TicTacToe,
         Move,
         mcts::DefaultAdjacencyTree<Move>,
@@ -22,9 +22,10 @@ fn main() {
         // let best_move = mtcs
         //     .search_for_duration(&game, std::time::Duration::from_secs(4))
         //     .expect("Could not find move?");
-        let best_move = mtcs
+        let best_move = mcts
             .search_for_iterations(&game, 600_000)
             .expect("Could not find move?");
+        mcts.subtree_pruning(best_move.clone());
         game = game.make_move(best_move);
 
         println!(
