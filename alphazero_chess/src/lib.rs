@@ -6,6 +6,9 @@ pub use chess;
 #[derive(Clone)]
 pub struct ChessWrapper(pub Board);
 
+unsafe impl Send for ChessWrapper {}
+unsafe impl Sync for ChessWrapper {}
+
 impl Default for ChessWrapper {
     fn default() -> Self {
         Self::new()
@@ -120,6 +123,18 @@ mod tests {
     use chess::ChessMove;
     use mcts::{StateEvaluation, selection::StandardSelectionStrategy};
     use std::str::FromStr as _;
+
+    #[test]
+    fn test_initial_possible_moves() {
+        let game = ChessWrapper::new();
+        let possible_moves = game.get_possible_actions();
+        assert_eq!(possible_moves.len(), 20); // 16 pawn moves + 4 knight moves
+
+        assert_eq!(game.0, Board::default());
+
+        println!("{}", game.pretty_print());
+    }
+
 
     #[test]
     fn test_find_mate_in_one() {

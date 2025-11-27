@@ -204,8 +204,7 @@ impl<
 
         zip(actions.iter(), zip(rewards.iter(), visits.iter()))
             .filter_map(|(action_opt, (reward, visit))| {
-                if let Some(action) = action_opt {
-                    Some((
+                action_opt.as_ref().map(|action| (
                         action.clone(),
                         if *visit > 0 {
                             reward / *visit as f32
@@ -213,9 +212,6 @@ impl<
                             0.0
                         },
                     ))
-                } else {
-                    None
-                }
             })
             .collect::<Vec<(A, f32)>>()
     }

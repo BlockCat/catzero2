@@ -3,7 +3,7 @@ name = "alphazero"
 version = "0.1.0"
 edition = "2024"
 
-# cargo llvm-cov --html --workspace
+
 
 [dependencies]
 

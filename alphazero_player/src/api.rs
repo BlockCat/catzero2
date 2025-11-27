@@ -1,33 +1,27 @@
 use std::sync::Arc;
 
-use crate::{Game, batcher::BatcherConfig, runner::{self, RunnerService}};
+use crate::{
+    batcher::BatcherConfig,
+    runner::{RunnerConfig, RunnerService},
+    Game,
+};
 use actix_web::{http::header::ContentType, *};
-use alphazero_chess::ChessWrapper;
 use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
     data: web::Data<crate::AppState>,
-    batch_response: web::Data<BatcherConfig>,
-    runner_service: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>,
-    // play_actor: web::Data<Addr<PlayActor>>,
-    // batch_actor: web::Data<Addr<BatchActor>>,
+    batch_config: web::Data<BatcherConfig>,
+    runner_config: web::Data<RunnerConfig>,
+    runner_service: web::Data<Arc<Mutex<RunnerService>>>,
 ) -> ServerStatus {
-    // let play_response = play_actor
-    //     .send(play_actor::InfoRequest)
-    //     .await
-    //     .expect("Could not get play info");
-    // let batch_response = batch_actor
-    //     .send(batch_actor::InfoRequest)
-    //     .await
-    //     .expect("Could not get batch actor info");
+
     let runner_service = runner_service.lock().await;
 
     let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
-            cpu_cores: data.play_cores,
+            threads: runner_config.threads,
             games_played: 0,
-            total_moves: 0,
             games_playing: runner_service.games_playing() as u32,
             models: vec![],
         })
@@ -41,15 +35,15 @@ async fn status(
         playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {
-            max_batch_size: batch_response.max_batch_size,
-            min_batch_size: batch_response.min_batch_size,
-            max_wait_time_ms: batch_response.max_wait.as_millis() as u64,
+            max_batch_size: batch_config.max_batch_size,
+            min_batch_size: batch_config.min_batch_size,
+            max_wait_time_ms: batch_config.max_wait.as_millis() as u64,
         },
     }
 }
 
 #[get("/start_play")]
-async fn start_play(data: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>) -> HttpResponse {
+async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let result = data.lock().await.start();
     if let Err(e) = result {
         return HttpResponse::InternalServerError().json(ServerMessage {
@@ -63,7 +57,7 @@ async fn start_play(data: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>) ->
 }
 
 #[get("/stop_play")]
-async fn stop_play(data: web::Data<Arc<Mutex<RunnerService<ChessWrapper>>>>) -> HttpResponse {
+async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let stopped = data.lock().await.stop();
     if stopped {
         HttpResponse::Ok().json(ServerMessage {
@@ -91,9 +85,8 @@ struct ServerStatus {
 
 #[derive(serde::Serialize)]
 struct PlayingInfo {
-    cpu_cores: usize,
+    threads: usize,
     games_played: u32,
-    total_moves: u32,
     games_playing: u32,
     models: Vec<ModelInfo>,
 }

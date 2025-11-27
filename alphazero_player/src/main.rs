@@ -1,12 +1,10 @@
 use std::{env, sync::Arc};
 
-use actix::Actor;
 use actix_web::{
     middleware::Logger,
     web::{scope, Data, ServiceConfig},
     App, HttpServer,
 };
-use alphazero_chess::ChessWrapper;
 use alphazero_nn::{AlphaZeroNN, PolicyOutputType};
 use candle_core::{DType, Device, Shape};
 use candle_nn::{VarBuilder, VarMap};
@@ -14,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     // actors::{batch_actor::BatchActor, play_actor::PlayActor},
-    batcher::{BatchService, BatcherConfig}, runner::GamePlayed,
+    batcher::{BatchService, BatcherConfig},
 };
 
 // mod actors;
@@ -41,58 +39,26 @@ async fn main() -> std::io::Result<()> {
     let port = get_env_var("PORT", "8080");
     let num = get_env_var_usize("WORKERS", 4);
 
-    let play_cores = get_env_var_usize("PLAY_CORES", 6);
-    let parallel_games = get_env_var_usize("PARALLEL_GAMES", 200);
-
-    let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
-    let min_batch_size = get_env_var_usize("MIN_BATCH_SIZE", 100);
-    let max_wait_ms = get_env_var_usize("MAX_WAIT_MS", 10);
-
     tracing::info!("Starting server on {}:{} with {} workers", host, port, num);
-    tracing::info!(
-        "Play cores: {}, Parallel games: {}",
-        play_cores,
-        parallel_games
-    );
 
-    let state = AppState {
-        game: Game::Chess,
-        play_cores,
-    };
-
-    // let batch_actor_addr = BatchActor::new().start();
-    // let play_actor_addr = PlayActor::new(
-    //     play_cores,
-    //     parallel_games,
-    //     batch_actor_addr.clone().recipient(),
-    // )
-    // .start();
+    let state = AppState { game: Game::Chess };
 
     let device = Device::cuda_if_available(0).expect("Could not get device");
 
-    let (model, vb) = load_model(&device);
+    let (model, _vb) = load_model(&device);
+    let batch_config = create_batcher_config();
 
-    let batch_config = BatcherConfig {
-        max_wait: std::time::Duration::from_millis(max_wait_ms as u64),
-        max_batch_size: max_batch_size,
-        min_batch_size: min_batch_size,
-    };
+    let (batcher, inference_sender) = BatchService::new(batch_config.clone(), model);
 
-    let (batcher, sender) = BatchService::new(batch_config.clone(), model);
+    let runner_config = create_runner_config(inference_sender);
 
-    let (games_played_tx, _games_played_rx) = tokio::sync::mpsc::channel::<GamePlayed<ChessWrapper>>(1000);
+    tracing::info!("Batcher config: {:?}", batch_config);
+    tracing::info!("Runner config: {:?}", runner_config);
 
-    let runner_config = runner::RunnerConfig {
-        num_iterations: 800,
-        threads: play_cores,
-        parallel_games,
-        channel: sender,
-        game_played_channel: games_played_tx,
-    };
+    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(
+        runner_config.clone(),
+    )));
 
-    
-    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(runner_config.clone())));
-    // Arc::get_mut(&mut runner_service).unwrap().start();    
     let batcher_handle = Arc::new(batcher.start());
 
     HttpServer::new(move || {
@@ -113,6 +79,31 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+fn create_batcher_config() -> BatcherConfig {
+    let max_wait_ms = get_env_var_usize("MAX_WAIT_MS", 10);
+    let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
+    let min_batch_size = get_env_var_usize("MIN_BATCH_SIZE", 100);
+    BatcherConfig {
+        max_wait: std::time::Duration::from_millis(max_wait_ms as u64),
+        max_batch_size,
+        min_batch_size,
+    }
+}
+
+fn create_runner_config(
+    inference_sender: tokio::sync::mpsc::Sender<batcher::InferenceRequest>,
+) -> runner::RunnerConfig {
+    let threads = get_env_var_usize("PLAY_CORES", 6);
+    let parallel_games = get_env_var_usize("PARALLEL_GAMES", 200);
+    let num_iterations = get_env_var_usize("NUM_ITERATIONS", 400);
+    runner::RunnerConfig {
+        num_iterations,
+        threads,
+        parallel_games,
+        inference_sender,
+    }
+}
+
 fn collect_routes(cfg: &mut ServiceConfig) {
     cfg.service(api::status)
         .service(api::start_play)
@@ -122,12 +113,13 @@ fn collect_routes(cfg: &mut ServiceConfig) {
 #[derive(Clone, Debug)]
 pub struct AppState {
     game: Game,
-    play_cores: usize,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
 enum Game {
     Chess,
+    PacoSaco,
+    MatchThreeConnectFour,
 }
 
 fn load_model(device: &Device) -> (AlphaZeroNN, VarMap) {

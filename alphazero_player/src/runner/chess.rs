@@ -2,15 +2,19 @@ use alphazero_chess::{
     chess::{self, BitBoard, ChessMove, Color, Piece},
     ChessWrapper,
 };
-use candle_core::{Device, Tensor};
+use candle_core::{Device, Shape, Tensor};
 use mcts::{DefaultAdjacencyTree, GameState, ModelEvaluation, StateEvaluation, MCTS};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{self, Sender};
 
 use crate::{
     batcher::InferenceRequest,
     runner::{GamePlayed, RunnerError, SingleRunner},
 };
 
+const STANDARD_PLANES: usize = 6; // ignoring no progress plane for now
+const BOARD_STATE_PLANES: usize = 12; // 12 piece planes, we ignore repetition planes for now
+
+#[derive(Debug, Clone)]
 pub(crate) struct ChessConfig {
     pub num_iterations: usize,
     pub discount_factor: f64,
@@ -18,18 +22,19 @@ pub(crate) struct ChessConfig {
     pub c2: f32,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct ChessRunner {
     config: ChessConfig,
-    channel: tokio::sync::mpsc::Sender<GamePlayed<ChessWrapper>>,
-    batcher: tokio::sync::mpsc::Sender<InferenceRequest>,
+    channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
+    batcher: mpsc::Sender<InferenceRequest>,
     device: Device,
 }
 
 impl ChessRunner {
     pub fn new(
         config: ChessConfig,
-        channel: tokio::sync::mpsc::Sender<GamePlayed<ChessWrapper>>,
-        batcher: tokio::sync::mpsc::Sender<InferenceRequest>,
+        channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
+        batcher: mpsc::Sender<InferenceRequest>,
         device: Device,
     ) -> Self {
         ChessRunner {
@@ -50,7 +55,7 @@ impl SingleRunner for ChessRunner {
     ) -> Result<GamePlayed<Self::GameState>, RunnerError> {
         let selection_strategy =
             mcts::AlphaZeroSelectionStrategy::new(self.config.c1, self.config.c2);
-        let state_evaluation = ActorAlphaEvaluator {
+        let state_evaluation = ChessActorAlphaEvaluator {
             historic_moves: 8,
             batcher: self.batcher.clone(),
             device: self.device.clone(),
@@ -67,7 +72,7 @@ impl SingleRunner for ChessRunner {
             ChessMove,
             DefaultAdjacencyTree<ChessMove>,
             mcts::AlphaZeroSelectionStrategy,
-            ActorAlphaEvaluator,
+            ChessActorAlphaEvaluator,
         > = MCTS::new(
             selection_strategy,
             state_evaluation,
@@ -109,27 +114,40 @@ impl SingleRunner for ChessRunner {
             winner,
         })
     }
+
+    async fn send_game_played(
+        &self,
+        game_played: GamePlayed<Self::GameState>,
+    ) -> Result<(), RunnerError> {
+        self.channel
+            .send(game_played)
+            .await
+            .map_err(|e| RunnerError::GameError(anyhow::anyhow!(e)))?;
+        Ok(())
+    }
+
+    fn tensor_input_shape(historic_states: usize) -> candle_core::Shape {
+        Shape::from_dims(&[BOARD_STATE_PLANES * historic_states + STANDARD_PLANES, 8, 8])
+    }
 }
 
-struct ActorAlphaEvaluator {
+struct ChessActorAlphaEvaluator {
     pub historic_moves: usize,
     pub batcher: Sender<InferenceRequest>,
     pub device: Device,
 }
 
-impl StateEvaluation<ChessWrapper> for ActorAlphaEvaluator {
+impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
     async fn evaluation(
         &self,
         state: &ChessWrapper,
         previous_state: &[ChessWrapper],
     ) -> ModelEvaluation {
-        let standard_planes = 6; // ignoring no progress plane for now
-        let board_plane = 12; // 12 piece planes, we ignore repetition planes for now
-        let total_planes = board_plane * self.historic_moves + standard_planes;
-
         let state_tensor = {
-            let mut slice = vec![0.0f32; 8 * 8 * (total_planes + standard_planes)];
-            add_state(&mut slice[0..8 * 8 * board_plane], state);
+            let shape = ChessRunner::tensor_input_shape(self.historic_moves);
+
+            let mut slice = vec![0.0f32; shape.elem_count()];
+            add_state(&mut slice[0..8 * 8 * BOARD_STATE_PLANES], state);
 
             previous_state
                 .iter()
@@ -137,12 +155,12 @@ impl StateEvaluation<ChessWrapper> for ActorAlphaEvaluator {
                 .take(self.historic_moves - 1)
                 .enumerate()
                 .for_each(|(i, prev_state)| {
-                    let start = (i + 1) * board_plane * 8 * 8;
-                    let end = start + board_plane * 8 * 8;
+                    let start = (i + 1) * BOARD_STATE_PLANES * 8 * 8;
+                    let end = start + BOARD_STATE_PLANES * 8 * 8;
                     add_state(&mut slice[start..end], prev_state);
                 });
 
-            let standard_plane_start = self.historic_moves * board_plane * 8 * 8usize;
+            let standard_plane_start = self.historic_moves * BOARD_STATE_PLANES * 8 * 8usize;
             let plane_size = 8 * 8usize;
 
             let colour = match state.0.side_to_move() {
@@ -172,12 +190,7 @@ impl StateEvaluation<ChessWrapper> for ActorAlphaEvaluator {
                     plane_size
                 ]);
 
-            Tensor::from_slice::<(usize, usize, usize), f32>(
-                &slice,
-                (total_planes, 8, 8),
-                &self.device,
-            )
-            .expect("Could not create tensor")
+            Tensor::from_slice(&slice, shape, &self.device).expect("Could not create tensor")
         };
 
         let player_id = state.0.side_to_move().to_index() as u32;
