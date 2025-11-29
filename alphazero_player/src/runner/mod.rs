@@ -1,6 +1,5 @@
-use crate::batcher::InferenceRequest;
-use alphazero_chess::{chess::ChessMove, ChessWrapper};
-use candle_core::Shape;
+use crate::{batcher::InferenceRequest, config::RunnerConfig};
+use candle_core::{Device, Shape};
 use mcts::GameState;
 use tokio::{
     runtime::{Handle, Runtime},
@@ -9,7 +8,11 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-mod chess;
+#[cfg(feature = "chess")]
+pub mod chess;
+
+#[cfg(feature = "chess")]
+use chess::{ChessConfig, ChessRunner};
 
 pub trait SingleRunner {
     type GameState: GameState + Clone + Send + Sync + 'static;
@@ -19,11 +22,11 @@ pub trait SingleRunner {
     fn play_game(
         &self,
         cancellation_token: CancellationToken,
-    ) -> impl std::future::Future<Output = Result<GamePlayed<ChessWrapper>, RunnerError>> + Send + Sync;
+    ) -> impl std::future::Future<Output = Result<GamePlayed<Self::GameState>, RunnerError>> + Send + Sync;
 
     fn send_game_played(
         &self,
-        game_played: GamePlayed<ChessWrapper>,
+        game_played: GamePlayed<Self::GameState>,
     ) -> impl std::future::Future<Output = Result<(), RunnerError>> + Send + Sync;
 }
 
@@ -50,22 +53,21 @@ pub struct GamePlayed<G: GameState + Send + Sync> {
 unsafe impl<G: GameState + Send + Sync> Send for GamePlayed<G> {}
 unsafe impl<G: GameState + Send + Sync> Sync for GamePlayed<G> {}
 
-#[derive(Debug, Clone)]
-pub struct RunnerConfig {
-    pub num_iterations: usize,
-    pub threads: usize,
-    pub parallel_games: usize,
-    pub inference_sender: mpsc::Sender<InferenceRequest>,
-}
-
 pub struct RunnerService {
     config: RunnerConfig,
     handle: Option<RunnerHandle>,
     rt: Runtime,
+    inference_sender: mpsc::Sender<InferenceRequest>,
+    device: Device,
+    games_played: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl RunnerService {
-    pub fn new(config: RunnerConfig) -> Self {
+    pub fn new(
+        config: RunnerConfig,
+        inference_sender: mpsc::Sender<InferenceRequest>,
+        device: Device,
+    ) -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(config.threads)
             .enable_time()
@@ -75,7 +77,14 @@ impl RunnerService {
             config,
             handle: None,
             rt,
+            inference_sender,
+            device,
+            games_played: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
+    }
+
+    pub fn games_played(&self) -> u64 {
+        self.games_played.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn is_running(&self) -> bool {
@@ -95,21 +104,61 @@ impl RunnerService {
             tracing::info!("RunnerService is already running");
             return Err(anyhow::anyhow!("RunnerService is already running"));
         }
-        let config = self.config.clone();
-        let rt = self.rt.handle().clone();
-        let cancellation_token = CancellationToken::new();
-        let cancellation_token_clone = cancellation_token.clone();
 
-        let handle = tokio::spawn(async move {
-            RunnerService::start_async(config, rt, cancellation_token_clone).await
-        });
+        #[cfg(feature = "chess")]
+        {
+            let config = self.config.clone();
+            let rt = self.rt.handle().clone();
+            let cancellation_token = CancellationToken::new();
+            let cancellation_token_clone = cancellation_token.clone();
+            let inference_sender = self.inference_sender.clone();
+            let device = self.device.clone();
+            let games_played = self.games_played.clone();
 
-        self.handle = Some(RunnerHandle {
-            task: handle,
-            cancellation_token,
-        });
+            let handle = self.rt.spawn(async move {
+                // Create a channel for game data collection
 
-        Ok(())
+                use alphazero_chess::ChessWrapper;
+                let (game_tx, mut game_rx) = mpsc::channel::<GamePlayed<ChessWrapper>>(100);
+
+                // Spawn a task to handle completed games
+                let games_played_counter = games_played.clone();
+                tokio::spawn(async move {
+                    while let Some(game) = game_rx.recv().await {
+                        // Log game completion
+                        tracing::info!("Game completed with {} moves", game.taken_actions.len());
+                        games_played_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        // TODO: Send game data to storage/training pipeline
+                    }
+                });
+
+                // Create the chess runner
+                let chess_config = ChessConfig {
+                    num_iterations: config.num_iterations,
+                    discount_factor: 0.99,
+                    c1: 1.25,
+                    c2: 19652.0,
+                };
+
+                let runner = ChessRunner::new(chess_config, game_tx, inference_sender, device);
+
+                RunnerService::start_async(config, rt, cancellation_token_clone, runner).await
+            });
+
+            self.handle = Some(RunnerHandle {
+                task: handle,
+                cancellation_token,
+            });
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "chess"))]
+        {
+            Err(anyhow::anyhow!(
+                "No game implementation enabled. Enable a feature like 'chess'"
+            ))
+        }
     }
 
     pub fn stop(&mut self) -> bool {

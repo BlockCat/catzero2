@@ -1,5 +1,5 @@
 use rand::{rng, seq::IteratorRandom};
-use std::{fmt::Debug, iter::zip, time::Duration};
+use std::{collections::HashMap, fmt::Debug, iter::zip, time::Duration};
 
 pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
 pub use tree::{DefaultAdjacencyTree, TreeHolder, TreeIndex};
@@ -135,12 +135,12 @@ impl<
             return;
         }
 
-        let node_evaluation: ModelEvaluation = self
+        let node_evaluation: ModelEvaluation<S::Action> = self
             .state_evaluation
             .evaluation(&state, &previous_state)
             .await;
 
-        self.expansion(&state, node, node_evaluation.policy());
+        self.expansion(node, node_evaluation.policy());
         self.backpropagation(path, node_evaluation.value());
     }
 
@@ -166,14 +166,15 @@ impl<
         (current_index, path, state, previous_state)
     }
 
-    fn expansion(&mut self, state: &S, node: TreeIndex, policy: &[f32]) {
-        let possible_actions = state.get_possible_actions();
-
-        if possible_actions.is_empty() {
+    fn expansion(&mut self, node: TreeIndex, policy: &HashMap<A, f32>) {
+        if policy.is_empty() {
             panic!("Node is in non terminal state, so actions are expected");
         }
 
-        self.tree.expand_node(node, &possible_actions, policy);
+        let (possible_actions, policy): (Vec<A>, Vec<f32>) =
+            policy.iter().map(|(a, b)| (a.clone(), *b)).unzip();
+
+        self.tree.expand_node(node, &possible_actions, &policy);
     }
 
     fn backpropagation(&mut self, path: Vec<TreeIndex>, mut reward: f64) {
@@ -204,14 +205,16 @@ impl<
 
         zip(actions.iter(), zip(rewards.iter(), visits.iter()))
             .filter_map(|(action_opt, (reward, visit))| {
-                action_opt.as_ref().map(|action| (
+                action_opt.as_ref().map(|action| {
+                    (
                         action.clone(),
                         if *visit > 0 {
                             reward / *visit as f32
                         } else {
                             0.0
                         },
-                    ))
+                    )
+                })
             })
             .collect::<Vec<(A, f32)>>()
     }
@@ -226,23 +229,23 @@ pub trait GameState: Clone + Default {
     /// return Some(reward) if terminal, None otherwise. +1 for win, -1 for loss, 0 for draw
     fn is_terminal(&self) -> Option<f64>;
 }
-pub trait StateEvaluation<S> {
-    async fn evaluation(&self, state: &S, previous_state: &[S]) -> ModelEvaluation;
+pub trait StateEvaluation<S: GameState> {
+    async fn evaluation(&self, state: &S, previous_state: &[S]) -> ModelEvaluation<S::Action>;
 }
 
-pub struct ModelEvaluation {
-    policy: Vec<f32>,
+pub struct ModelEvaluation<C> {
+    policy: HashMap<C, f32>,
     value: f64,
 }
 
-impl ModelEvaluation {
-    pub fn new(policy: Vec<f32>, value: f64) -> Self {
+impl<C> ModelEvaluation<C> {
+    pub fn new(policy: HashMap<C, f32>, value: f64) -> Self {
         ModelEvaluation { policy, value }
     }
     pub fn value(&self) -> f64 {
         self.value
     }
-    pub fn policy(&self) -> &Vec<f32> {
+    pub fn policy(&self) -> &HashMap<C, f32> {
         &self.policy
     }
 }
@@ -311,8 +314,15 @@ mod tests {
             &self,
             _state: &TestState,
             _previous_state: &[TestState],
-        ) -> ModelEvaluation {
-            ModelEvaluation::new(vec![0.0; 20], 0.0)
+        ) -> ModelEvaluation<TestAction> {
+            ModelEvaluation::new(
+                vec![0.0; 20]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, v)| (TestAction(i), v))
+                    .collect(),
+                0.0,
+            )
         }
     }
 }

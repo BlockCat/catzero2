@@ -1,6 +1,7 @@
 use candle_core::{Tensor, D};
-use mcts::GameState;
 use tokio::task::JoinHandle;
+
+use crate::config::BatcherConfig;
 
 pub struct BatcherHandle(JoinHandle<Result<(), anyhow::Error>>);
 
@@ -15,14 +16,6 @@ pub struct InferenceRequest {
 pub struct InferenceResponse {
     pub output_tensor: Tensor,
     pub value: f32,
-}
-
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct BatcherConfig {
-    pub max_wait: std::time::Duration,
-    pub max_batch_size: usize,
-    pub min_batch_size: usize,
 }
 
 pub struct BatchService {

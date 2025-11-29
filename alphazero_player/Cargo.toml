@@ -29,5 +29,7 @@ env_logger = "0.11.8"
 anyhow = "1.0.100"
 
 [features]
-default = ["cuda", "alphazero_chess"]
+default = ["cuda", "chess"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "alphazero_nn/cuda"]
+
+chess = ["alphazero_chess"]

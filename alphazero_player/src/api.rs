@@ -1,27 +1,20 @@
 use std::sync::Arc;
 
-use crate::{
-    batcher::BatcherConfig,
-    runner::{RunnerConfig, RunnerService},
-    Game,
-};
-use actix_web::{http::header::ContentType, *};
+use crate::{config::ApplicationConfig, runner::RunnerService, Game};
+use actix_web::{http::header::ContentType, get, post, *};
 use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
-    data: web::Data<crate::AppState>,
-    batch_config: web::Data<BatcherConfig>,
-    runner_config: web::Data<RunnerConfig>,
+    config: web::Data<ApplicationConfig>,
     runner_service: web::Data<Arc<Mutex<RunnerService>>>,
 ) -> ServerStatus {
-
     let runner_service = runner_service.lock().await;
 
     let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
-            threads: runner_config.threads,
-            games_played: 0,
+            threads: config.runner_config.threads,
+            games_played: runner_service.games_played() as u32,
             games_playing: runner_service.games_playing() as u32,
             models: vec![],
         })
@@ -31,13 +24,13 @@ async fn status(
 
     ServerStatus {
         running: true,
-        game: data.game.clone(),
+        game: Game::Chess,
         playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {
-            max_batch_size: batch_config.max_batch_size,
-            min_batch_size: batch_config.min_batch_size,
-            max_wait_time_ms: batch_config.max_wait.as_millis() as u64,
+            max_batch_size: config.batcher_config.max_batch_size,
+            min_batch_size: config.batcher_config.min_batch_size,
+            max_wait_time_ms: config.batcher_config.max_wait.as_millis() as u64,
         },
     }
 }
@@ -68,6 +61,28 @@ async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
             message: "Play was not running".to_string(),
         });
     }
+}
+
+#[post("/update_model")]
+async fn update_model(
+    _model_data: web::Json<ModelUpdateRequest>,
+) -> HttpResponse {
+    // TODO: Implement model hot-swapping
+    // 1. Load new model weights from the provided path or data
+    // 2. Update the batcher's model reference
+    // 3. Optionally restart runner to use new model immediately
+    
+    HttpResponse::Ok().json(ServerMessage {
+        message: "Model update endpoint not yet implemented. This will support hot-swapping neural network weights.".to_string(),
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct ModelUpdateRequest {
+    #[allow(dead_code)]
+    model_path: Option<String>,
+    #[allow(dead_code)]
+    model_data: Option<Vec<u8>>,
 }
 
 #[derive(serde::Serialize)]

@@ -25,7 +25,7 @@ pub enum Cell {
 }
 
 /// Represents a move in TicTacToe (row, col)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Move {
     pub row: usize,
     pub col: usize,

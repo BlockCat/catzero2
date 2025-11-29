@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use alphazero_chess::{
     chess::{self, BitBoard, ChessMove, Color, Piece},
     ChessWrapper,
 };
-use candle_core::{Device, Shape, Tensor};
+use candle_core::{Device, Result as CResult, Shape, Tensor};
 use mcts::{DefaultAdjacencyTree, GameState, ModelEvaluation, StateEvaluation, MCTS};
 use tokio::sync::mpsc::{self, Sender};
 
@@ -15,7 +17,7 @@ const STANDARD_PLANES: usize = 6; // ignoring no progress plane for now
 const BOARD_STATE_PLANES: usize = 12; // 12 piece planes, we ignore repetition planes for now
 
 #[derive(Debug, Clone)]
-pub(crate) struct ChessConfig {
+pub struct ChessConfig {
     pub num_iterations: usize,
     pub discount_factor: f64,
     pub c1: f32,
@@ -23,7 +25,7 @@ pub(crate) struct ChessConfig {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ChessRunner {
+pub struct ChessRunner {
     config: ChessConfig,
     channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
     batcher: mpsc::Sender<InferenceRequest>,
@@ -142,7 +144,7 @@ impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
         &self,
         state: &ChessWrapper,
         previous_state: &[ChessWrapper],
-    ) -> ModelEvaluation {
+    ) -> ModelEvaluation<ChessMove> {
         let state_tensor = {
             let shape = ChessRunner::tensor_input_shape(self.historic_moves);
 
@@ -207,10 +209,30 @@ impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
             .expect("Failed to send InferenceRequest");
 
         let response = rx.await.expect("Failed to receive InferenceResponse");
-        ModelEvaluation::new(vec![], response.value as f64);
-        todo!()
+        
+        // Convert flat policy tensor to sparse policy vector for legal moves
+        let possible_actions = state.get_possible_actions();
+        let policy_vec = convert_policy_tensor_to_action_probs(
+            &response.output_tensor,
+            &possible_actions,
+        ).expect("Failed to convert policy tensor");
+        
+        ModelEvaluation::new(policy_vec, response.value as f64)
     }
 }
+
+/// Convert flat policy tensor output to sparse policy vector for legal moves
+/// The network outputs a flat tensor of size 4672 (64 squares × 73 move types)
+/// We extract only the probabilities for legal moves in the current position
+fn convert_policy_tensor_to_action_probs(
+    policy_tensor: &Tensor,
+    legal_moves: &[ChessMove],
+) -> Result<HashMap<ChessMove, f32>, candle_core::Error> {
+   
+
+   todo!()
+}
+
 
 // We ignore repetition planes for now
 fn add_state(slice: &mut [f32], state: &ChessWrapper) {

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use alphazero_tictactoe::{GameResult, Move, TicTacToe};
 use mcts::{GameState, StateEvaluation, selection::StandardSelectionStrategy};
 use rand::seq::IteratorRandom;
@@ -50,26 +52,24 @@ fn main() {
 struct TicTacToeStateEvaluation;
 
 impl StateEvaluation<TicTacToe> for TicTacToeStateEvaluation {
-    async fn evaluation(&self, state: &TicTacToe, _: &[TicTacToe]) -> mcts::ModelEvaluation {
+    async fn evaluation(&self, state: &TicTacToe, _: &[TicTacToe]) -> mcts::ModelEvaluation<Move> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
-        let policy = if action_count > 0 {
-            let prob = 1.0 / action_count as f32;
-            possible_actions.iter().map(|_| prob).collect::<Vec<f32>>()
-        } else {
-            Vec::new()
-        };
+
+        let policy = possible_actions
+            .into_iter()
+            .map(|mv| (mv, 1.0 / action_count as f32))
+            .collect::<HashMap<Move, f32>>();
 
         let value = match state.check_winner() {
             GameResult::Win(winner) => {
-                debug_assert_eq!(winner, state.current_player().opponent());                
+                debug_assert_eq!(winner, state.current_player().opponent());
                 -1.0
             }
             GameResult::Draw => 0.0,
             GameResult::InProgress => {
                 let simulated_result = random_play(state);
                 match simulated_result {
-
                     GameResult::Win(winner) => {
                         if winner == state.current_player() {
                             1.0
