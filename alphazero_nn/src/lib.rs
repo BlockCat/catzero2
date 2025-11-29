@@ -340,6 +340,8 @@ impl ModuleT for ValueHead {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
     use candle_core::{DType, Device, Shape};
     use candle_nn::VarMap;
@@ -361,11 +363,18 @@ mod tests {
 
         let model = AlphaZeroNN::new(config, vs)?;
 
-        let batch_size = 200;
+        let batch_size = 500;
         // 5 seconds per move.
 
+        let start = Instant::now();
+
         let input = Tensor::randn(1.0f32, 2.0, &[batch_size, 119, 8, 8], &device)?;
+
+        println!("Input tensor created in {:?}", start.elapsed());
+
         let (policy_output, value_output) = model.forward_t(&input, false)?;
+
+        println!("Model forward pass completed in {:?}", start.elapsed());
 
         assert_eq!(
             policy_output.shape(),
