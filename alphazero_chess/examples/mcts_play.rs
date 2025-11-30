@@ -65,15 +65,14 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
         &self,
         state: &ChessWrapper,
         _previous_state: &[ChessWrapper],
-    ) -> mcts::ModelEvaluation {
+    ) -> mcts::ModelEvaluation<ChessMove> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
-        let policy = if action_count > 0 {
-            let prob = 1.0 / action_count as f32;
-            possible_actions.iter().map(|_| prob).collect::<Vec<f32>>()
-        } else {
-            Vec::new()
-        };
+        
+        let policy = possible_actions
+            .into_iter()
+            .map(|action| (action, 1.0 / action_count as f32))
+            .collect::<std::collections::HashMap<_, _>>();
 
         let value = match state.0.status() {
             chess::BoardStatus::Stalemate => 0.1,

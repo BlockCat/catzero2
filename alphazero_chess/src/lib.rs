@@ -135,7 +135,6 @@ mod tests {
         println!("{}", game.pretty_print());
     }
 
-
     #[test]
     fn test_find_mate_in_one() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
@@ -176,7 +175,10 @@ mod tests {
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
         mtcs.subtree_pruning(best_move.clone());
-        println!("Known positions after pruning: {}", mtcs.positions_expanded());
+        println!(
+            "Known positions after pruning: {}",
+            mtcs.positions_expanded()
+        );
         assert_eq!(best_move.to_string(), "e4f6");
 
         game = game.take_action(best_move);
@@ -185,7 +187,10 @@ mod tests {
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
         mtcs.subtree_pruning(best_move.clone());
-        println!("Known positions after pruning: {}", mtcs.positions_expanded());
+        println!(
+            "Known positions after pruning: {}",
+            mtcs.positions_expanded()
+        );
         assert_eq!(best_move.to_string(), "g7f6");
 
         game = game.take_action(best_move);
@@ -198,15 +203,18 @@ mod tests {
     struct ChessStateEvaluation;
 
     impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
-        async fn evaluation(&self, state: &ChessWrapper, _previous_state: &[ChessWrapper]) -> mcts::ModelEvaluation {
+        async fn evaluation(
+            &self,
+            state: &ChessWrapper,
+            _previous_state: &[ChessWrapper],
+        ) -> mcts::ModelEvaluation<ChessMove> {
             let possible_actions = state.get_possible_actions();
             let action_count = possible_actions.len();
-            let policy = if action_count > 0 {
-                let prob = 1.0 / action_count as f32;
-                possible_actions.iter().map(|_| prob).collect::<Vec<f32>>()
-            } else {
-                Vec::new()
-            };
+
+            let policy = possible_actions
+                .into_iter()
+                .map(|action| (action, 1.0 / action_count as f32))
+                .collect::<std::collections::HashMap<_, _>>();
 
             let value = match state.0.status() {
                 chess::BoardStatus::Stalemate => 0.1,
@@ -219,8 +227,8 @@ mod tests {
     }
 
     fn random_play(start_game: &ChessWrapper) -> f64 {
-        let mut rng = rand::rng();
-        let mut current_game = start_game.clone();
+        // let mut rng = rand::rng();s
+        // let current_game = start_game.clone();
 
         // let mut counter = 0;
         // while let None = current_game.is_terminal() {
@@ -246,7 +254,7 @@ mod tests {
         //     -current_game.evaluate_position()
         // };
 
-        return current_game.evaluate_position();
+        return start_game.evaluate_position();
         // val
     }
 }

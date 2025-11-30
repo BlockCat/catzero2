@@ -4,7 +4,7 @@ use alphazero_chess::{
     chess::{self, BitBoard, ChessMove, Color, Piece},
     ChessWrapper,
 };
-use candle_core::{Device, Result as CResult, Shape, Tensor};
+use candle_core::{Device, Shape, Tensor};
 use mcts::{DefaultAdjacencyTree, GameState, ModelEvaluation, StateEvaluation, MCTS};
 use tokio::sync::mpsc::{self, Sender};
 
@@ -225,8 +225,8 @@ impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
 /// The network outputs a flat tensor of size 4672 (64 squares × 73 move types)
 /// We extract only the probabilities for legal moves in the current position
 fn convert_policy_tensor_to_action_probs(
-    policy_tensor: &Tensor,
-    legal_moves: &[ChessMove],
+    _policy_tensor: &Tensor,
+    _legal_moves: &[ChessMove],
 ) -> Result<HashMap<ChessMove, f32>, candle_core::Error> {
    
 
