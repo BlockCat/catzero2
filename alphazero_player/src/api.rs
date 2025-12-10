@@ -35,7 +35,7 @@ async fn status(
     }
 }
 
-#[get("/start_play")]
+#[get("/play")]
 async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let result = data.lock().await.start();
     if let Err(e) = result {
@@ -49,7 +49,7 @@ async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse 
     })
 }
 
-#[get("/stop_play")]
+#[delete("/stop")]
 async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let stopped = data.lock().await.stop();
     if stopped {

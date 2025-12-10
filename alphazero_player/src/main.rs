@@ -14,6 +14,7 @@ use crate::{batcher::BatchService, config::ApplicationConfig};
 mod api;
 mod batcher;
 mod runner;
+mod model_repository;
 
 mod config;
 
@@ -29,6 +30,10 @@ async fn main() -> std::io::Result<()> {
     let device = Device::cuda_if_available(0).expect("Could not get device");
 
     let (model, _vb) = load_model(&device);
+
+    tracing::info!("Model loaded on device: {:?}", device);
+    
+    _vb.save("./test.safetensors").expect("Could not save model");
 
     let (batcher, inference_sender) = BatchService::new(config.batcher_config.clone(), model);
 
@@ -52,7 +57,7 @@ async fn main() -> std::io::Result<()> {
             .service(scope("/api").configure(collect_routes))
     })
     .bind(host)?
-    .workers(workers)
+    .workers(workers)    
     .run()
     .await?;
 

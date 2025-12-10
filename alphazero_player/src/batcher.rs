@@ -24,6 +24,7 @@ pub struct BatchService {
     model: alphazero_nn::AlphaZeroNN,
 }
 
+
 impl BatchService {
     pub fn new(
         config: BatcherConfig,

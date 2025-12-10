@@ -8,5 +8,6 @@ candle-core = { git = "https://github.com/huggingface/candle.git"}
 candle-nn = { git = "https://github.com/huggingface/candle.git"}
 
 [features]
-default = ["cuda"]
+default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
+cudnn = ["candle-core/cudnn", "candle-nn/cudnn"]
