@@ -24,7 +24,6 @@ pub struct ApplicationConfig {
 pub struct BatcherConfig {
     pub max_wait: Duration,
     pub max_batch_size: usize,
-    pub min_batch_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -53,11 +52,9 @@ impl ApplicationConfig {
 fn create_batcher_config() -> BatcherConfig {
     let max_wait_ms = get_env_var_usize("MAX_WAIT_MS", 10);
     let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
-    let min_batch_size = get_env_var_usize("MIN_BATCH_SIZE", 100);
     BatcherConfig {
         max_wait: Duration::from_millis(max_wait_ms as u64),
         max_batch_size,
-        min_batch_size,
     }
 }
 

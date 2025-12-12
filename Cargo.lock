@@ -467,7 +467,7 @@ source = "git+https://github.com/huggingface/candle.git#e33d776df0ade486328c14fd
 dependencies = [
  "byteorder",
  "candle-kernels",
- "cudarc 0.18.1",
+ "cudarc 0.18.2",
  "float8 0.5.0",
  "gemm",
  "half",
@@ -636,9 +636,9 @@ dependencies = [
 
 [[package]]
 name = "cudarc"
-version = "0.18.1"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef0cfc5e22a6b6f7d04ee45b0151232ca236ede8ca3534210fd4072bdead0d60"
+checksum = "3aa12038120eb13347a6ae2ffab1d34efe78150125108627fd85044dd4d6ff1e"
 dependencies = [
  "float8 0.3.0",
  "half",
@@ -834,7 +834,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba2e52f316a4ed4cbceb9b724b138a4ea4051f1737dac516f08ff1b437e3db0c"
 dependencies = [
- "cudarc 0.18.1",
+ "cudarc 0.18.2",
  "half",
  "num-traits",
  "rand 0.9.2",

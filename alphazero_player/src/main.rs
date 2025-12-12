@@ -9,14 +9,13 @@ use candle_nn::{VarBuilder, VarMap};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::{batcher::BatchService, config::ApplicationConfig};
+use crate::{config::ApplicationConfig, inference::InferenceService};
 
 mod api;
-mod batcher;
-mod runner;
-mod model_repository;
-
 mod config;
+mod inference;
+mod model_repository;
+mod runner;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -32,16 +31,21 @@ async fn main() -> std::io::Result<()> {
     let (model, _vb) = load_model(&device);
 
     tracing::info!("Model loaded on device: {:?}", device);
-    
-    _vb.save("./test.safetensors").expect("Could not save model");
 
-    let (batcher, inference_sender) = BatchService::new(config.batcher_config.clone(), model);
+    _vb.save("./test.safetensors")
+        .expect("Could not save model");
 
-    let batcher_handle = Arc::new(batcher.start());
-    
+    // TODO: inference service really should be owned by a runner? And the runner service by the API server?
+    // TODO: rethink ownership model here, but I think that we need to have an inference service per runner service at least,
+    // so that we can stop/start them independently on a different modus.
+    let inference_service = Arc::new(InferenceService::new(
+        config.batcher_config.clone(),
+        inference::InferenceModusRequest::Evaluator(vec![]),
+    ));
+
     let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(
         config.runner_config.clone(),
-        inference_sender,
+        inference_service.clone(),
         device.clone(),
     )));
 
@@ -51,13 +55,13 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
-            .app_data(Data::new(batcher_handle.clone()))
+            .app_data(Data::new(inference_service.clone()))
             .app_data(Data::new(config.clone()))
             .app_data(Data::new(runner_service.clone()))
             .service(scope("/api").configure(collect_routes))
     })
     .bind(host)?
-    .workers(workers)    
+    .workers(workers)
     .run()
     .await?;
 

@@ -29,7 +29,6 @@ async fn status(
         play_info,
         batch_info: BatchInfo {
             max_batch_size: config.batcher_config.max_batch_size,
-            min_batch_size: config.batcher_config.min_batch_size,
             max_wait_time_ms: config.batcher_config.max_wait.as_millis() as u64,
         },
     }
@@ -121,7 +120,6 @@ struct HyperParamInfo {
 #[derive(serde::Serialize)]
 struct BatchInfo {
     max_batch_size: usize,
-    min_batch_size: usize,
     max_wait_time_ms: u64,
 }
 

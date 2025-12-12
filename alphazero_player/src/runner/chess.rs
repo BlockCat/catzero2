@@ -1,17 +1,15 @@
-use std::collections::HashMap;
-
+use crate::{
+    inference::{InferenceRequest, InferenceService},
+    runner::{GamePlayed, RunnerError, SingleRunner},
+};
 use alphazero_chess::{
     chess::{self, BitBoard, ChessMove, Color, Piece},
     ChessWrapper,
 };
 use candle_core::{Device, Shape, Tensor};
 use mcts::{DefaultAdjacencyTree, GameState, ModelEvaluation, StateEvaluation, MCTS};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc::{self, Sender};
-
-use crate::{
-    batcher::InferenceRequest,
-    runner::{GamePlayed, RunnerError, SingleRunner},
-};
 
 const STANDARD_PLANES: usize = 6; // ignoring no progress plane for now
 const BOARD_STATE_PLANES: usize = 12; // 12 piece planes, we ignore repetition planes for now
@@ -28,7 +26,7 @@ pub struct ChessConfig {
 pub struct ChessRunner {
     config: ChessConfig,
     channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
-    batcher: mpsc::Sender<InferenceRequest>,
+    batcher: Arc<InferenceService>,
     device: Device,
 }
 
@@ -36,7 +34,7 @@ impl ChessRunner {
     pub fn new(
         config: ChessConfig,
         channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
-        batcher: mpsc::Sender<InferenceRequest>,
+        batcher: Arc<InferenceService>,
         device: Device,
     ) -> Self {
         ChessRunner {
@@ -135,7 +133,7 @@ impl SingleRunner for ChessRunner {
 
 struct ChessActorAlphaEvaluator {
     pub historic_moves: usize,
-    pub batcher: Sender<InferenceRequest>,
+    pub batcher: Arc<InferenceService>,
     pub device: Device,
 }
 
@@ -197,26 +195,20 @@ impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
 
         let player_id = state.0.side_to_move().to_index() as u32;
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        self.batcher
-            .send(InferenceRequest {
+        let response = self
+            .batcher
+            .request(InferenceRequest {
                 player_id,
                 state_tensor,
-                response_channel: tx,
             })
-            .await
-            .expect("Failed to send InferenceRequest");
+            .await;
 
-        let response = rx.await.expect("Failed to receive InferenceResponse");
-        
         // Convert flat policy tensor to sparse policy vector for legal moves
         let possible_actions = state.get_possible_actions();
-        let policy_vec = convert_policy_tensor_to_action_probs(
-            &response.output_tensor,
-            &possible_actions,
-        ).expect("Failed to convert policy tensor");
-        
+        let policy_vec =
+            convert_policy_tensor_to_action_probs(&response.output_tensor, &possible_actions)
+                .expect("Failed to convert policy tensor");
+
         ModelEvaluation::new(policy_vec, response.value as f64)
     }
 }
@@ -228,11 +220,8 @@ fn convert_policy_tensor_to_action_probs(
     _policy_tensor: &Tensor,
     _legal_moves: &[ChessMove],
 ) -> Result<HashMap<ChessMove, f32>, candle_core::Error> {
-   
-
-   todo!()
+    todo!()
 }
-
 
 // We ignore repetition planes for now
 fn add_state(slice: &mut [f32], state: &ChessWrapper) {

@@ -1,4 +1,6 @@
-use crate::{batcher::InferenceRequest, config::RunnerConfig};
+use std::sync::Arc;
+
+use crate::{config::RunnerConfig, inference::{InferenceRequest, InferenceService}};
 use candle_core::{Device, Shape};
 use mcts::GameState;
 use tokio::{
@@ -95,7 +97,7 @@ pub struct RunnerService {
     config: RunnerConfig,
     handle: Option<RunnerHandle>,
     rt: Runtime,
-    inference_sender: mpsc::Sender<InferenceRequest>,
+    inference_sender: Arc<InferenceService>,
     device: Device,
     games_played: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
@@ -103,7 +105,7 @@ pub struct RunnerService {
 impl RunnerService {
     pub fn new(
         config: RunnerConfig,
-        inference_sender: mpsc::Sender<InferenceRequest>,
+        inference_sender: Arc<InferenceService>,
         device: Device,
     ) -> Self {
         let rt = tokio::runtime::Builder::new_multi_thread()

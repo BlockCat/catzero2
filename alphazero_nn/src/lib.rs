@@ -34,6 +34,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct AlphaZeroNN {
     input_block: InputBlock,
     residual_blocks: Vec<ResidualBlock>,
@@ -91,6 +92,7 @@ impl AlphaZeroNN {
     }
 }
 
+#[derive(Debug)]
 struct InputBlock {
     input: Conv2d,
     initial_conv: Conv2d,
@@ -151,7 +153,7 @@ impl ModuleT for InputBlock {
             .relu()
     }
 }
-
+#[derive(Debug)]
 struct ResidualBlock {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
@@ -211,16 +213,19 @@ impl ModuleT for ResidualBlock {
     }
 }
 
+#[derive(Debug)]
 pub enum PolicyOutputType {
     Flat(usize),
     Conv(usize),
 }
 
+#[derive(Debug)]
 enum PolicyOutputLayer {
     Flat(Linear),
     Conv(Conv2d),
 }
 
+#[derive(Debug)]
 struct PolicyHead {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
@@ -285,6 +290,7 @@ impl ModuleT for PolicyHead {
     }
 }
 
+#[derive(Debug)]
 struct ValueHead {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
