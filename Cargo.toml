@@ -41,6 +41,6 @@ candle-nn = { git = "https://github.com/huggingface/candle.git" }
 
 mcts = { path = "mcts" }
 alphazero_nn = { path = "alphazero_nn" }
-alphazero_player = { path = "alphazero_player",features = ["cuda"] }
+alphazero_player = { path = "alphazero_player", features = ["cuda"] }
 alphazero_tictactoe = { path = "alphazero_tictactoe" }
 alphazero_chess = { path = "alphazero_chess" }
