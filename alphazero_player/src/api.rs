@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{config::ApplicationConfig, runner::RunnerService, Game};
-use actix_web::{http::header::ContentType, get, post, *};
+use actix_web::{get, http::header::ContentType, post, *};
 use tokio::sync::Mutex;
 
 #[get("/status")]
@@ -29,7 +29,6 @@ async fn status(
         play_info,
         batch_info: BatchInfo {
             max_batch_size: config.batcher_config.max_batch_size,
-            max_wait_time_ms: config.batcher_config.max_wait.as_millis() as u64,
         },
     }
 }
@@ -63,14 +62,12 @@ async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
 }
 
 #[post("/update_model")]
-async fn update_model(
-    _model_data: web::Json<ModelUpdateRequest>,
-) -> HttpResponse {
+async fn update_model(_model_data: web::Json<ModelUpdateRequest>) -> HttpResponse {
     // TODO: Implement model hot-swapping
     // 1. Load new model weights from the provided path or data
     // 2. Update the batcher's model reference
     // 3. Optionally restart runner to use new model immediately
-    
+
     HttpResponse::Ok().json(ServerMessage {
         message: "Model update endpoint not yet implemented. This will support hot-swapping neural network weights.".to_string(),
     })
@@ -120,7 +117,6 @@ struct HyperParamInfo {
 #[derive(serde::Serialize)]
 struct BatchInfo {
     max_batch_size: usize,
-    max_wait_time_ms: u64,
 }
 
 impl Responder for ServerStatus {

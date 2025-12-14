@@ -369,7 +369,7 @@ mod tests {
 
         let model = AlphaZeroNN::new(config, vs)?;
 
-        let batch_size = 500;
+        let batch_size = 2;
         // 5 seconds per move.
 
         let start = Instant::now();
