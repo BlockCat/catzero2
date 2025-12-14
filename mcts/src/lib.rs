@@ -253,3 +253,209 @@ impl<C> ModelEvaluation<C> {
         &self.policy
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::selection::StandardSelectionStrategy;
+
+    // Simple test game state for testing MCTS
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TestGame {
+        value: i32,
+        depth: usize,
+        max_depth: usize,
+    }
+
+    impl Default for TestGame {
+        fn default() -> Self {
+            TestGame {
+                value: 0,
+                depth: 0,
+                max_depth: 3,
+            }
+        }
+    }
+
+    impl GameState for TestGame {
+        type Action = i32;
+
+        fn get_possible_actions(&self) -> Vec<Self::Action> {
+            if self.depth >= self.max_depth {
+                vec![]
+            } else {
+                vec![1, 2, 3]
+            }
+        }
+
+        fn take_action(&self, action: Self::Action) -> Self {
+            TestGame {
+                value: self.value + action,
+                depth: self.depth + 1,
+                max_depth: self.max_depth,
+            }
+        }
+
+        fn is_terminal(&self) -> Option<f64> {
+            if self.depth >= self.max_depth {
+                Some(self.value as f64 / 10.0)
+            } else {
+                None
+            }
+        }
+    }
+
+    struct TestEvaluator;
+
+    impl StateEvaluation<TestGame> for TestEvaluator {
+        async fn evaluation(
+            &self,
+            state: &TestGame,
+            _previous_state: &[TestGame],
+        ) -> ModelEvaluation<i32> {
+            let actions = state.get_possible_actions();
+            let mut policy = HashMap::new();
+
+            for action in actions {
+                policy.insert(action, 1.0 / 3.0);
+            }
+
+            ModelEvaluation::new(policy, 0.5)
+        }
+    }
+
+    #[test]
+    fn test_mcts_initialization() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        assert_eq!(mcts.positions_expanded(), 1); // Root node
+    }
+
+    #[test]
+    fn test_mcts_search_iterations() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        let game = TestGame::default();
+        let action = mcts.search_for_iterations(&game, 10);
+
+        assert!(action.is_some());
+        assert!(mcts.positions_expanded() >= 10);
+    }
+
+    #[test]
+    fn test_mcts_search_duration() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        let game = TestGame::default();
+        let duration = Duration::from_millis(10);
+        let action = mcts.search_for_duration(&game, duration);
+
+        assert!(action.is_some());
+        assert!(mcts.positions_expanded() > 1);
+    }
+
+    #[test]
+    fn test_mcts_best_from_tree() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        let game = TestGame::default();
+        mcts.search_for_iterations(&game, 50);
+
+        let action = mcts.best_from_tree();
+        assert!(action.is_some());
+        let action = action.unwrap();
+        assert!(action == 1 || action == 2 || action == 3);
+    }
+
+    #[test]
+    fn test_mcts_get_action_probabilities() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        let game = TestGame::default();
+        mcts.search_for_iterations(&game, 50);
+
+        let probs = mcts.get_action_probabilities();
+        assert_eq!(probs.len(), 3);
+
+        // All actions should be present
+        let actions: Vec<i32> = probs.iter().map(|(a, _)| *a).collect();
+        assert!(actions.contains(&1));
+        assert!(actions.contains(&2));
+        assert!(actions.contains(&3));
+    }
+
+    #[test]
+    fn test_mcts_subtree_pruning() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.9);
+
+        let game = TestGame::default();
+        mcts.search_for_iterations(&game, 50);
+
+        let initial_size = mcts.positions_expanded();
+
+        let action = mcts.best_from_tree().unwrap();
+        mcts.subtree_pruning(action);
+
+        let after_pruning_size = mcts.positions_expanded();
+        assert!(after_pruning_size < initial_size);
+    }
+
+    #[test]
+    fn test_model_evaluation_creation() {
+        let mut policy = HashMap::new();
+        policy.insert(1, 0.5);
+        policy.insert(2, 0.3);
+        policy.insert(3, 0.2);
+
+        let evaluation = ModelEvaluation::new(policy.clone(), 0.8);
+
+        assert_eq!(evaluation.value(), 0.8);
+        assert_eq!(evaluation.policy(), &policy);
+    }
+
+    #[test]
+    fn test_mcts_terminal_state_immediate() {
+        // Create a terminal game state
+        let game = TestGame {
+            value: 10,
+            depth: 3,
+            max_depth: 3,
+        };
+
+        // For terminal state with no possible actions
+        assert_eq!(game.get_possible_actions().len(), 0);
+        assert!(game.is_terminal().is_some());
+    }
+
+    #[test]
+    fn test_backpropagation_discount() {
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
+        let evaluator = TestEvaluator;
+        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+            MCTS::new(selection_strategy, evaluator, 0.5); // discount factor 0.5
+
+        let game = TestGame::default();
+        mcts.search_for_iterations(&game, 10);
+
+        // Just verify search completes with discount factor
+        assert!(mcts.positions_expanded() >= 10);
+    }
+}

@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::env;
 
 fn get_env_var(key: &str, default: &str) -> String {
     env::var(key).unwrap_or(default.to_string())
@@ -20,10 +20,17 @@ pub struct ApplicationConfig {
     pub runner_config: RunnerConfig,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BatcherConfig {
-    pub max_wait: Duration,
     pub max_batch_size: usize,
+}
+
+impl Default for BatcherConfig {
+    fn default() -> Self {
+        BatcherConfig {
+            max_batch_size: 200,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +38,16 @@ pub struct RunnerConfig {
     pub num_iterations: usize,
     pub threads: usize,
     pub parallel_games: usize,
+}
+
+impl Default for RunnerConfig {
+    fn default() -> Self {
+        RunnerConfig {
+            num_iterations: 400,
+            threads: 6,
+            parallel_games: 200,
+        }
+    }
 }
 
 impl ApplicationConfig {
@@ -50,12 +67,8 @@ impl ApplicationConfig {
 }
 
 fn create_batcher_config() -> BatcherConfig {
-    let max_wait_ms = get_env_var_usize("MAX_WAIT_MS", 10);
     let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
-    BatcherConfig {
-        max_wait: Duration::from_millis(max_wait_ms as u64),
-        max_batch_size,
-    }
+    BatcherConfig { max_batch_size }
 }
 
 fn create_runner_config() -> RunnerConfig {
