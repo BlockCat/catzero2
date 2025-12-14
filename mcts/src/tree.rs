@@ -22,6 +22,9 @@ pub trait TreeHolder<A>: Default {
     /// Returns whether the tree is empty.
     fn is_empty(&self) -> bool;
 
+    /// Returns the number of nodes in the tree.
+    fn node_count(&self) -> usize;
+
     /// Initializes the root node of the tree.
     fn init_root_node(&mut self);
     /// Returns whether the node at `index` is fully expanded.
@@ -87,8 +90,12 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         self.children_start_index[index.index()].is_some()
     }
 
+    fn node_count(&self) -> usize {
+        self.actions.len()
+    }
+
     fn init_root_node(&mut self) {
-        debug_assert!(self.actions.is_empty(), "Tree already initialized");
+        assert!(self.actions.is_empty(), "Tree already initialized");
         self.actions.push(None);
         self.visit_counts.push(0);
         self.rewards.push(0.0);
@@ -277,7 +284,7 @@ mod tests {
         tree.init_root_node();
         let actions = vec!['x', 'y', 'z'];
         let policy = vec![0.3, 0.4, 0.3];
-        let child_index = tree.expand_node(TreeIndex::root(), &actions, &policy);
+        tree.expand_node(TreeIndex::root(), &actions, &policy);
 
         for i in 0..3 {
             let child = tree.child_index(TreeIndex::root(), i);

@@ -120,3 +120,7 @@ This cycle repeats iteratively, with each iteration improving the model's streng
     - Send model to storage
 - Storage
 - Webview
+
+
+## Tests
+`cargo llvm-cov --html --workspace`

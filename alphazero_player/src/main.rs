@@ -1,6 +1,3 @@
-use std::{env, sync::Arc};
-
-use actix::Actor;
 use actix_web::{
     middleware::Logger,
     web::{scope, Data, ServiceConfig},
@@ -9,100 +6,62 @@ use actix_web::{
 use alphazero_nn::{AlphaZeroNN, PolicyOutputType};
 use candle_core::{DType, Device, Shape};
 use candle_nn::{VarBuilder, VarMap};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::{
-    // actors::{batch_actor::BatchActor, play_actor::PlayActor},
-    batcher::{BatchService, BatcherConfig},
-};
+use crate::{config::ApplicationConfig, inference::InferenceService};
 
-// mod actors;
 mod api;
-mod batcher;
+mod config;
+mod inference;
+mod model_repository;
 mod runner;
-
-fn get_env_var(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or(default.to_string())
-}
-fn get_env_var_usize(key: &str, default: usize) -> usize {
-    env::var(key)
-        .unwrap_or(default.to_string())
-        .parse::<usize>()
-        .expect(&format!("Could not parse {}", key))
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // Load configuration from environment variables
-    let host = get_env_var("HOST", "127.0.0.1");
-    let port = get_env_var("PORT", "8080");
-    let num = get_env_var_usize("WORKERS", 4);
+    let config = ApplicationConfig::load();
 
-    let play_cores = get_env_var_usize("PLAY_CORES", 6);
-    let parallel_games = get_env_var_usize("PARALLEL_GAMES", 200);
-
-    let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
-    let min_batch_size = get_env_var_usize("MIN_BATCH_SIZE", 100);
-    let max_wait_ms = get_env_var_usize("MAX_WAIT_MS", 10);
-
-    tracing::info!("Starting server on {}:{} with {} workers", host, port, num);
-    tracing::info!(
-        "Play cores: {}, Parallel games: {}",
-        play_cores,
-        parallel_games
-    );
-
-    let state = AppState {
-        game: Game::Chess,
-        play_cores,
-    };
-
-    // let batch_actor_addr = BatchActor::new().start();
-    // let play_actor_addr = PlayActor::new(
-    //     play_cores,
-    //     parallel_games,
-    //     batch_actor_addr.clone().recipient(),
-    // )
-    // .start();
+    tracing::info!("Application configuration: {:?}", config);
 
     let device = Device::cuda_if_available(0).expect("Could not get device");
 
-    let (model, vb) = load_model(&device);
+    let (_model, _vb) = load_model(&device);
 
-    let batch_config = BatcherConfig {
-        max_wait: std::time::Duration::from_millis(max_wait_ms as u64),
-        max_batch_size: max_batch_size,
-        min_batch_size: min_batch_size,
-    };
+    tracing::info!("Model loaded on device: {:?}", device);
 
-    let (batcher, sender) = BatchService::new(batch_config.clone(), model);
+    _vb.save("./test.safetensors")
+        .expect("Could not save model");
 
-    let runner_config = runner::RunnerConfig {
-        num_iterations: 800,
-        threads: play_cores,
-        parallel_games,
-        channel: sender,
-    };
+    // TODO: inference service really should be owned by a runner? And the runner service by the API server?
+    // TODO: rethink ownership model here, but I think that we need to have an inference service per runner service at least,
+    // so that we can stop/start them independently on a different modus.
+    let inference_service = Arc::new(InferenceService::new(
+        config.batcher_config.clone(),
+        inference::InferenceModusRequest::Evaluator(vec![]),
+    ));
 
-    
-    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(runner_config.clone())));
-    // Arc::get_mut(&mut runner_service).unwrap().start();    
-    let batcher_handle = Arc::new(batcher.start());
+    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(
+        config.runner_config.clone(),
+        inference_service.clone(),
+        device.clone(),
+    )));
+
+    let host = format!("{}:{}", config.host, config.port);
+    let workers = config.server_workers;
 
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
-            .app_data(Data::new(batcher_handle.clone()))
-            .app_data(Data::new(state.clone()))
-            .app_data(Data::new(batch_config.clone()))
-            .app_data(Data::new(runner_config.clone()))
+            .app_data(Data::new(inference_service.clone()))
+            .app_data(Data::new(config.clone()))
             .app_data(Data::new(runner_service.clone()))
             .service(scope("/api").configure(collect_routes))
     })
-    .bind(format!("{}:{}", host, port))?
-    .workers(num)
+    .bind(host)?
+    .workers(workers)
     .run()
     .await?;
 
@@ -112,18 +71,15 @@ async fn main() -> std::io::Result<()> {
 fn collect_routes(cfg: &mut ServiceConfig) {
     cfg.service(api::status)
         .service(api::start_play)
-        .service(api::stop_play);
-}
-
-#[derive(Clone, Debug)]
-pub struct AppState {
-    game: Game,
-    play_cores: usize,
+        .service(api::stop_play)
+        .service(api::update_model);
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
 enum Game {
     Chess,
+    PacoSaco,
+    MatchThreeConnectFour,
 }
 
 fn load_model(device: &Device) -> (AlphaZeroNN, VarMap) {

@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-candle-core = { git = "https://github.com/huggingface/candle.git"}
-candle-nn = { git = "https://github.com/huggingface/candle.git"}
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
 
 [features]
-default = ["cuda"]
+default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
+cudnn = ["candle-core/cudnn", "candle-nn/cudnn"]

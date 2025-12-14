@@ -6,7 +6,7 @@ fn main() {
     println!("Random play example for Tic Tac Toe");
     let selection_strategy = mcts::selection::StandardSelectionStrategy::new(1.4);
     let state_evaluation = ChessStateEvaluation;
-    let mtcs = mcts::MCTS::<
+    let mut mtcs = mcts::MCTS::<
         ChessWrapper,
         ChessMove,
         mcts::DefaultAdjacencyTree<ChessMove>,
@@ -26,6 +26,12 @@ fn main() {
                 std::time::Duration::from_secs(4),
             )
             .expect("Could not find move?");
+
+        println!("Known positions: {}", mtcs.positions_expanded());
+
+        mtcs.subtree_pruning(best_move.clone());
+
+        println!("Known positions after pruning: {}", mtcs.positions_expanded());
         // let best_move = mtcs
         //     .search_for_iterations(&game, 6000_000)
         //     .expect("Could not find move?");
@@ -59,15 +65,14 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
         &self,
         state: &ChessWrapper,
         _previous_state: &[ChessWrapper],
-    ) -> mcts::ModelEvaluation {
+    ) -> mcts::ModelEvaluation<ChessMove> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
-        let policy = if action_count > 0 {
-            let prob = 1.0 / action_count as f32;
-            possible_actions.iter().map(|_| prob).collect::<Vec<f32>>()
-        } else {
-            Vec::new()
-        };
+        
+        let policy = possible_actions
+            .into_iter()
+            .map(|action| (action, 1.0 / action_count as f32))
+            .collect::<std::collections::HashMap<_, _>>();
 
         let value = match state.0.status() {
             chess::BoardStatus::Stalemate => 0.1,

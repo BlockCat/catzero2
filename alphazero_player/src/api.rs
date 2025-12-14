@@ -1,32 +1,20 @@
 use std::sync::Arc;
 
-use crate::{Game, batcher::BatcherConfig, runner::{self, RunnerService}};
-use actix_web::{http::header::ContentType, *};
+use crate::{config::ApplicationConfig, runner::RunnerService, Game};
+use actix_web::{http::header::ContentType, get, post, *};
 use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
-    data: web::Data<crate::AppState>,
-    batch_response: web::Data<BatcherConfig>,
+    config: web::Data<ApplicationConfig>,
     runner_service: web::Data<Arc<Mutex<RunnerService>>>,
-    // play_actor: web::Data<Addr<PlayActor>>,
-    // batch_actor: web::Data<Addr<BatchActor>>,
 ) -> ServerStatus {
-    // let play_response = play_actor
-    //     .send(play_actor::InfoRequest)
-    //     .await
-    //     .expect("Could not get play info");
-    // let batch_response = batch_actor
-    //     .send(batch_actor::InfoRequest)
-    //     .await
-    //     .expect("Could not get batch actor info");
     let runner_service = runner_service.lock().await;
 
     let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
-            cpu_cores: data.play_cores,
-            games_played: 0,
-            total_moves: 0,
+            threads: config.runner_config.threads,
+            games_played: runner_service.games_played() as u32,
             games_playing: runner_service.games_playing() as u32,
             models: vec![],
         })
@@ -36,18 +24,17 @@ async fn status(
 
     ServerStatus {
         running: true,
-        game: data.game.clone(),
+        game: Game::Chess,
         playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {
-            max_batch_size: batch_response.max_batch_size,
-            min_batch_size: batch_response.min_batch_size,
-            max_wait_time_ms: batch_response.max_wait.as_millis() as u64,
+            max_batch_size: config.batcher_config.max_batch_size,
+            max_wait_time_ms: config.batcher_config.max_wait.as_millis() as u64,
         },
     }
 }
 
-#[get("/start_play")]
+#[get("/play")]
 async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let result = data.lock().await.start();
     if let Err(e) = result {
@@ -61,7 +48,7 @@ async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse 
     })
 }
 
-#[get("/stop_play")]
+#[delete("/stop")]
 async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
     let stopped = data.lock().await.stop();
     if stopped {
@@ -69,10 +56,32 @@ async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
             message: "Play stopped".to_string(),
         })
     } else {
-        return HttpResponse::Ok().json(ServerMessage {
+        HttpResponse::Ok().json(ServerMessage {
             message: "Play was not running".to_string(),
-        });
+        })
     }
+}
+
+#[post("/update_model")]
+async fn update_model(
+    _model_data: web::Json<ModelUpdateRequest>,
+) -> HttpResponse {
+    // TODO: Implement model hot-swapping
+    // 1. Load new model weights from the provided path or data
+    // 2. Update the batcher's model reference
+    // 3. Optionally restart runner to use new model immediately
+    
+    HttpResponse::Ok().json(ServerMessage {
+        message: "Model update endpoint not yet implemented. This will support hot-swapping neural network weights.".to_string(),
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct ModelUpdateRequest {
+    #[allow(dead_code)]
+    model_path: Option<String>,
+    #[allow(dead_code)]
+    model_data: Option<Vec<u8>>,
 }
 
 #[derive(serde::Serialize)]
@@ -90,9 +99,8 @@ struct ServerStatus {
 
 #[derive(serde::Serialize)]
 struct PlayingInfo {
-    cpu_cores: usize,
+    threads: usize,
     games_played: u32,
-    total_moves: u32,
     games_playing: u32,
     models: Vec<ModelInfo>,
 }
@@ -112,7 +120,6 @@ struct HyperParamInfo {
 #[derive(serde::Serialize)]
 struct BatchInfo {
     max_batch_size: usize,
-    min_batch_size: usize,
     max_wait_time_ms: u64,
 }
 

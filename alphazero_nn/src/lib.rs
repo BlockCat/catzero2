@@ -34,6 +34,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct AlphaZeroNN {
     input_block: InputBlock,
     residual_blocks: Vec<ResidualBlock>,
@@ -91,6 +92,7 @@ impl AlphaZeroNN {
     }
 }
 
+#[derive(Debug)]
 struct InputBlock {
     input: Conv2d,
     initial_conv: Conv2d,
@@ -151,7 +153,7 @@ impl ModuleT for InputBlock {
             .relu()
     }
 }
-
+#[derive(Debug)]
 struct ResidualBlock {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
@@ -211,16 +213,19 @@ impl ModuleT for ResidualBlock {
     }
 }
 
+#[derive(Debug)]
 pub enum PolicyOutputType {
     Flat(usize),
     Conv(usize),
 }
 
+#[derive(Debug)]
 enum PolicyOutputLayer {
     Flat(Linear),
     Conv(Conv2d),
 }
 
+#[derive(Debug)]
 struct PolicyHead {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
@@ -285,6 +290,7 @@ impl ModuleT for PolicyHead {
     }
 }
 
+#[derive(Debug)]
 struct ValueHead {
     conv1: Conv2d,
     batch_norm1: BatchNorm,
@@ -340,6 +346,8 @@ impl ModuleT for ValueHead {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
     use candle_core::{DType, Device, Shape};
     use candle_nn::VarMap;
@@ -361,11 +369,18 @@ mod tests {
 
         let model = AlphaZeroNN::new(config, vs)?;
 
-        let batch_size = 200;
+        let batch_size = 500;
         // 5 seconds per move.
 
+        let start = Instant::now();
+
         let input = Tensor::randn(1.0f32, 2.0, &[batch_size, 119, 8, 8], &device)?;
+
+        println!("Input tensor created in {:?}", start.elapsed());
+
         let (policy_output, value_output) = model.forward_t(&input, false)?;
+
+        println!("Model forward pass completed in {:?}", start.elapsed());
 
         assert_eq!(
             policy_output.shape(),
