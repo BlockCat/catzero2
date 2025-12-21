@@ -12,7 +12,8 @@ fn main() {
         mcts::DefaultAdjacencyTree<ChessMove>,
         StandardSelectionStrategy,
         ChessStateEvaluation,
-    >::new(selection_strategy, state_evaluation, 0.9);
+    >::new(selection_strategy, state_evaluation, 0.9)
+    .unwrap();
 
     // let mut game = ChessWrapper::new();
     let mut game = Game::new();
@@ -29,9 +30,12 @@ fn main() {
 
         println!("Known positions: {}", mtcs.positions_expanded());
 
-        mtcs.subtree_pruning(best_move.clone());
+        mtcs.subtree_pruning(best_move.clone()).unwrap();
 
-        println!("Known positions after pruning: {}", mtcs.positions_expanded());
+        println!(
+            "Known positions after pruning: {}",
+            mtcs.positions_expanded()
+        );
         // let best_move = mtcs
         //     .search_for_iterations(&game, 6000_000)
         //     .expect("Could not find move?");
@@ -68,7 +72,7 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
     ) -> mcts::ModelEvaluation<ChessMove> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
-        
+
         let policy = possible_actions
             .into_iter()
             .map(|action| (action, 1.0 / action_count as f32))
@@ -84,34 +88,6 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
     }
 }
 
-fn random_play(start_game: &ChessWrapper) -> f64 {
-    let mut rng = rand::rng();
-    let mut current_game = start_game.clone();
-
-    // let mut counter = 0;
-    // while let None = current_game.is_terminal() {
-    //     let available_moves: Vec<_> = current_game.get_possible_actions();
-    //     if let Some(&mv) = available_moves.iter().choose(&mut rng) {
-    //         current_game = current_game.take_action(mv);
-    //     } else {
-    //         break;
-    //     }
-    //     counter += 1;
-    //     if counter > 100 {
-    //         return if current_game.0.side_to_move() == start_game.0.side_to_move() {
-    //             current_game.evaluate_position()
-    //         } else {
-    //             -current_game.evaluate_position()
-    //         };
-    //     }
-    // }
-
-    // let val = if current_game.0.side_to_move() == start_game.0.side_to_move() {
-    //     current_game.evaluate_position()
-    // } else {
-    //     -current_game.evaluate_position()
-    // };
-
-    return current_game.evaluate_position();
-    // val
+fn random_play(start_game: &ChessWrapper) -> f32 {
+    start_game.evaluate_position()
 }

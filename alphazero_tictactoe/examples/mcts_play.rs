@@ -14,7 +14,8 @@ fn main() {
         mcts::DefaultAdjacencyTree<Move>,
         StandardSelectionStrategy,
         TicTacToeStateEvaluation,
-    >::new(selection_strategy, state_evaluation, 0.9);
+    >::new(selection_strategy, state_evaluation, 0.9)
+    .unwrap();
 
     let mut game = TicTacToe::new();
     game = game.make_move(Move::new(0, 0)); // Let X start in the center
@@ -27,7 +28,7 @@ fn main() {
         let best_move = mcts
             .search_for_iterations(&game, 600_000)
             .expect("Could not find move?");
-        mcts.subtree_pruning(best_move.clone());
+        mcts.subtree_pruning(best_move.clone()).unwrap();
         game = game.make_move(best_move);
 
         println!(

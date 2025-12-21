@@ -5,8 +5,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = { workspace = true }
-# actix-rt = "2.10"
-# actix = "0.13"
+
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -26,8 +25,10 @@ candle-nn = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 env_logger = { workspace = true }
-anyhow = { workspace = true }
 safetensors = { workspace = true }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 [features]
 default = ["chess"]

@@ -1,21 +1,19 @@
-use alphazero_nn::AlphaZeroNN;
-use candle_core::Tensor;
-
 use crate::{
     config::BatcherConfig,
     inference::batcher::{BatchService, BatcherHandle, BatcherRequest},
 };
+use alphazero_nn::AlphaZeroNN;
+use candle_core::Tensor;
 
 mod batcher;
 
 #[derive(Debug)]
 pub struct InferenceService {
-    config: BatcherConfig,
     modus: InferenceModus,
 }
 
 #[derive(Debug)]
-pub enum InferenceModus {
+enum InferenceModus {
     None,
     SinglePlayer(InferenceWorker),
     Evaluator(Vec<InferenceWorker>),
@@ -29,25 +27,43 @@ pub enum InferenceModusRequest {
 
 impl InferenceService {
     pub fn new(config: BatcherConfig, modus: InferenceModusRequest) -> Self {
-
         let modus = match modus {
             InferenceModusRequest::SinglePlayer(model) => {
-                let worker = InferenceWorker::new(0, model, config.clone());
+                let worker = InferenceWorker::new(model, config.clone());
                 InferenceModus::SinglePlayer(worker)
             }
             InferenceModusRequest::Evaluator(models) => {
                 let workers = models
                     .into_iter()
-                    .enumerate()
-                    .map(|(i, model)| InferenceWorker::new(i as u32, Box::new(model), config.clone()))
+                    .map(|model| InferenceWorker::new(Box::new(model), config.clone()))
                     .collect();
                 InferenceModus::Evaluator(workers)
             }
         };
 
-        Self {
-            config,
-            modus,
+        Self { modus }
+    }
+
+    pub fn update_model(&self, id: Option<usize>, weights: Vec<u8>) -> Result<(), anyhow::Error> {
+        match &self.modus {
+            InferenceModus::None => Err(anyhow::anyhow!(
+                "InferenceService modus is None, cannot update model"
+            )),
+            InferenceModus::SinglePlayer(inference_worker) => {
+                inference_worker.update_model(weights)
+            }
+            InferenceModus::Evaluator(_inference_workers) => {
+                if let Some(player_id) = id {
+                    let inference_worker = _inference_workers
+                        .get(player_id)
+                        .ok_or_else(|| anyhow::anyhow!("Invalid player ID"))?;
+                    inference_worker.update_model(weights)
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Must provide player ID to update model in Evaluator modus"
+                    ))
+                }
+            }
         }
     }
 
@@ -67,25 +83,21 @@ impl InferenceService {
             }
         }
     }
-
 }
-
 
 #[derive(Debug)]
 struct InferenceWorker {
-    id: u32,
     worker_sender: tokio::sync::mpsc::Sender<BatcherRequest>,
-    handle: BatcherHandle,
+    _handle: BatcherHandle,
 }
 
 impl InferenceWorker {
-    pub fn new(id: u32, model: Box<AlphaZeroNN>, config: BatcherConfig) -> Self {
+    pub fn new(model: Box<AlphaZeroNN>, config: BatcherConfig) -> Self {
         let (batch_service, worker_sender) = BatchService::new(config, model);
         let handle = batch_service.start();
         Self {
-            id,
             worker_sender,
-            handle,
+            _handle: handle,
         }
     }
 
@@ -107,6 +119,12 @@ impl InferenceWorker {
             output_tensor: batch_response.output_tensor,
             value: batch_response.value,
         }
+    }
+
+    pub fn update_model(&self, _weights: Vec<u8>) -> Result<(), anyhow::Error> {
+        todo!()
+        // self.worker_sender
+        //     .try_send(BatcherRequest::UpdateModel { weights })
     }
 }
 

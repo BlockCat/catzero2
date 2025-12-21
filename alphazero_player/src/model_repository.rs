@@ -3,7 +3,11 @@ use candle_core::{Device, Tensor};
 use candle_nn::VarMap;
 use safetensors::tensor::SafeTensors;
 
-pub async fn load_model(_name: String, vm: &mut VarMap, device: &Device) -> Result<(), anyhow::Error> {
+pub async fn load_model(
+    _name: String,
+    vm: &mut VarMap,
+    device: &Device,
+) -> Result<(), anyhow::Error> {
     let buffer = vec![];
     let safetensor = SafeTensors::deserialize(&buffer)?;
 
@@ -34,11 +38,11 @@ mod tests {
         let device = Device::Cpu;
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
         let shape = (2, 2);
-        
+
         // Create a simple tensor directly for testing
         let tensor = Tensor::from_slice(&data, shape, &device);
         assert!(tensor.is_ok());
-        
+
         let tensor = tensor.unwrap();
         assert_eq!(tensor.shape(), &Shape::from_dims(&[2, 2]));
     }
@@ -48,10 +52,10 @@ mod tests {
         let device = Device::Cpu;
         let data: Vec<f32> = vec![1.0, 2.0, 3.0];
         let shape = 3_usize;
-        
+
         let tensor = Tensor::from_slice(&data, shape, &device);
         assert!(tensor.is_ok());
-        
+
         let tensor = tensor.unwrap();
         assert_eq!(tensor.shape(), &Shape::from_dims(&[3]));
     }
@@ -61,10 +65,10 @@ mod tests {
         let device = Device::Cpu;
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let shape = (2, 2, 2);
-        
+
         let tensor = Tensor::from_slice(&data, shape, &device);
         assert!(tensor.is_ok());
-        
+
         let tensor = tensor.unwrap();
         assert_eq!(tensor.shape(), &Shape::from_dims(&[2, 2, 2]));
     }
@@ -74,7 +78,7 @@ mod tests {
         let device = Device::Cpu;
         let data: Vec<f32> = vec![];
         let shape = 0_usize;
-        
+
         let tensor = Tensor::from_slice(&data, shape, &device);
         assert!(tensor.is_ok());
     }
@@ -82,14 +86,14 @@ mod tests {
     #[test]
     fn test_tensor_with_different_dtypes() {
         let device = Device::Cpu;
-        
+
         // Test with i64
         let data_i64: Vec<i64> = vec![1, 2, 3, 4];
         let shape = (2, 2);
         let tensor_i64 = Tensor::from_slice(&data_i64, shape, &device);
         assert!(tensor_i64.is_ok());
         assert_eq!(tensor_i64.unwrap().dtype(), DType::I64);
-        
+
         // Test with u32
         let data_u32: Vec<u32> = vec![1, 2, 3, 4];
         let tensor_u32 = Tensor::from_slice(&data_u32, shape, &device);
@@ -100,13 +104,13 @@ mod tests {
     #[test]
     fn test_tensor_shape_validity() {
         let device = Device::Cpu;
-        
+
         // Valid shape - should work
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
         let shape = (2, 2);
         let tensor = Tensor::from_slice(&data, shape, &device);
         assert!(tensor.is_ok());
-        
+
         // Empty tensor with zero shape
         let empty_data: Vec<f32> = vec![];
         let empty_shape = 0_usize;
@@ -114,4 +118,3 @@ mod tests {
         assert!(empty_tensor.is_ok());
     }
 }
-

@@ -59,7 +59,7 @@ impl ChessWrapper {
         board_str
     }
 
-    pub fn evaluate_position(&self) -> f64 {
+    pub fn evaluate_position(&self) -> f32 {
         // Simple evaluation: material count
 
         if self.0.status() == chess::BoardStatus::Checkmate {
@@ -97,6 +97,14 @@ impl ChessWrapper {
 impl GameState for ChessWrapper {
     type Action = chess::ChessMove;
 
+    fn current_player_id(&self) -> usize {
+        if self.0.side_to_move() == chess::Color::White {
+            0
+        } else {
+            1
+        }
+    }
+
     fn get_possible_actions(&self) -> Vec<Self::Action> {
         MoveGen::new_legal(&self.0).collect()
     }
@@ -106,7 +114,7 @@ impl GameState for ChessWrapper {
         ChessWrapper(new_board)
     }
 
-    fn is_terminal(&self) -> Option<f64> {
+    fn is_terminal(&self) -> Option<f32> {
         if self.0.status() == chess::BoardStatus::Checkmate {
             Some(1000.0)
         } else if self.0.status() == chess::BoardStatus::Stalemate {
@@ -145,7 +153,8 @@ mod tests {
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
-        >::new(selection_strategy, state_evaluation, 0.9);
+        >::new(selection_strategy, state_evaluation, 0.9)
+        .unwrap();
         let mut game = ChessWrapper::new();
         game.0 = Board::from_str("r5r1/p2nR3/2k5/P1pn3p/7P/1RPP1PB1/5P2/5K2 w - - 1 32").unwrap();
 
@@ -165,7 +174,8 @@ mod tests {
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
-        >::new(selection_strategy, state_evaluation, 0.9);
+        >::new(selection_strategy, state_evaluation, 0.9)
+        .unwrap();
         let mut game = ChessWrapper::new();
         game.0 =
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();
@@ -174,7 +184,7 @@ mod tests {
             .search_for_iterations(&game, 10_000)
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
-        mtcs.subtree_pruning(best_move.clone());
+        mtcs.subtree_pruning(best_move.clone()).unwrap();
         println!(
             "Known positions after pruning: {}",
             mtcs.positions_expanded()
@@ -186,7 +196,7 @@ mod tests {
             .search_for_iterations(&game, 10_000)
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
-        mtcs.subtree_pruning(best_move.clone());
+        mtcs.subtree_pruning(best_move.clone()).unwrap();
         println!(
             "Known positions after pruning: {}",
             mtcs.positions_expanded()
@@ -226,7 +236,7 @@ mod tests {
         }
     }
 
-    fn random_play(start_game: &ChessWrapper) -> f64 {
+    fn random_play(start_game: &ChessWrapper) -> f32 {
         // let mut rng = rand::rng();s
         // let current_game = start_game.clone();
 

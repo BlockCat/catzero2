@@ -43,11 +43,11 @@ Each game generates training data consisting of:
 - **Game outcomes** (win/loss/draw)
 - **Move probabilities** (policies learned during play)
 
-### MCTS Algorithm
+## MCTS Algorithm
 
 AlphaZero uses a variant of MCTS with four phases per simulation:
 
-#### 1. Selection
+### 1. Selection
 
 At each node, select the action that maximizes the Upper Confidence Bound (UCB):
 
@@ -63,7 +63,7 @@ $$U(s, a) = c_{puct} \cdot P(s, a) \cdot \frac{\sqrt{\sum_b N(s, b)}}{1 + N(s, a
 - $N(s, a)$ = visit count for state-action pair
 - $c_{puct}$ = exploration constant controlling exploration vs. exploitation trade-off
 
-#### 2. Expansion
+### 2. Expansion
 
 When a leaf node is reached, expand it using the neural network:
 
@@ -73,7 +73,7 @@ $$(P(s, \cdot), v) = f_\theta(s)$$
 - $P(s, \cdot)$ = policy vector (prior probabilities for all actions)
 - $v$ = value estimate for the position
 
-#### 3. Backup
+### 3. Backup
 
 Update statistics for all edges traversed in the simulation:
 
@@ -86,7 +86,7 @@ $$Q(s, a) = \frac{W(s, a)}{N(s, a)}$$
 - $W(s, a)$ = total action-value (sum of all values backed up through this edge)
 - $v$ = value from neural network evaluation (negated for opponent's perspective)
 
-#### 4. Play
+### 4. Play
 
 After running $n$ MCTS simulations from the root position, select a move based on visit counts:
 
@@ -97,7 +97,7 @@ $$\pi(a|s_0) = \frac{N(s_0, a)^{1/\tau}}{\sum_b N(s_0, b)^{1/\tau}}$$
   - $\tau \to 0$ selects the most visited move (exploitation)
   - $\tau = 1$ samples proportionally to visit counts (exploration)
 
-### Training Process
+## Training Process
 
 Training follows a two-phase cycle:
 
@@ -106,21 +106,30 @@ Training follows a two-phase cycle:
 
 This cycle repeats iteratively, with each iteration improving the model's strength.
 
+### Self Play
+
+Many games are played using the same model for all players. Every position has a policy and the game outcome related to it.
+
+### Training
+
+The last 100,000 positions are saved? And used for training?
+
 # Components
 
 - Playing <- At least this one is for running in rust.
-    - MCTS
-    - Receive Model from storage
-    - Send games to storage
-    - Determine ELO rating.
+
+  - MCTS
+  - Receive Model from storage
+  - Send games to storage
+  - Determine ELO rating.
 
 - Learning
-    - Receive games from storage
-    - Learn from games
-    - Send model to storage
+  - Receive games from storage
+  - Learn from games
+  - Send model to storage
 - Storage
 - Webview
 
-
 ## Tests
+
 `cargo llvm-cov --html --workspace`
