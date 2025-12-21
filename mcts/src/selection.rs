@@ -199,7 +199,9 @@ mod standard {
 
     impl StandardSelectionStrategy {
         pub fn new(exploration_constant: f32) -> Self {
-            StandardSelectionStrategy { exploration_constant }
+            StandardSelectionStrategy {
+                exploration_constant,
+            }
         }
     }
 
@@ -266,19 +268,19 @@ mod standard {
         #[test]
         fn test_standard_selection_with_unvisited_child() {
             let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-            tree.init_root_node();
-            
+            tree.init_root_node().unwrap();
+
             let actions = vec!['a', 'b', 'c'];
             let policy = vec![0.3, 0.5, 0.2];
             tree.expand_node(TreeIndex::root(), &actions, &policy);
-            
+
             // Visit the root
             tree.increase_node_visit_count(TreeIndex::root());
-            
+
             let strategy = StandardSelectionStrategy::new(1.4);
             let state = MockState;
             let (action, child_idx) = strategy.select_child(&tree, &state, TreeIndex::root());
-            
+
             // Should select one of the children
             assert!(action == 'a' || action == 'b' || action == 'c');
             assert!(child_idx.index() >= 1 && child_idx.index() <= 3);
@@ -287,51 +289,51 @@ mod standard {
         #[test]
         fn test_standard_selection_prefers_best_reward() {
             let mut tree: DefaultAdjacencyTree<i32> = DefaultAdjacencyTree::default();
-            tree.init_root_node();
-            
+            tree.init_root_node().unwrap();
+
             let actions = vec![1, 2, 3];
             let policy = vec![0.3, 0.3, 0.4];
             tree.expand_node(TreeIndex::root(), &actions, &policy);
-            
+
             // Set up visits and rewards
             tree.increase_node_visit_count(TreeIndex::root());
             tree.increase_node_visit_count(TreeIndex::root());
             tree.increase_node_visit_count(TreeIndex::root());
-            
+
             let child1 = tree.child_index(TreeIndex::root(), 0);
             let child2 = tree.child_index(TreeIndex::root(), 1);
             let child3 = tree.child_index(TreeIndex::root(), 2);
-            
+
             // Give child2 the best reward
             tree.increase_node_visit_count(child1);
             tree.update_node_value(child1, 0.3);
-            
+
             tree.increase_node_visit_count(child2);
             tree.update_node_value(child2, 0.9);
-            
+
             tree.increase_node_visit_count(child3);
             tree.update_node_value(child3, 0.2);
-            
+
             // With very low exploration constant, should prefer best reward
             let strategy = StandardSelectionStrategy::new(0.01);
             let state = MockState;
             let (action, _) = strategy.select_child(&tree, &state, TreeIndex::root());
-            
+
             assert_eq!(action, 2);
         }
 
         #[test]
         fn test_random_selection_strategy() {
             let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-            tree.init_root_node();
-            
+            tree.init_root_node().unwrap();
+
             let actions = vec!['x', 'y', 'z'];
             let policy = vec![0.3, 0.4, 0.3];
             tree.expand_node(TreeIndex::root(), &actions, &policy);
-            
+
             let strategy = RandomSelectionStrategy;
             let state = MockState;
-            
+
             // Test that it selects one of the valid children
             for _ in 0..10 {
                 let (action, child_idx) = strategy.select_child(&tree, &state, TreeIndex::root());

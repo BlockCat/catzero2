@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use crate::error::{MCTSError::TreeNodeInitializationFailed, Result};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TreeIndex(usize);
 
@@ -26,7 +28,7 @@ pub trait TreeHolder<A>: Default {
     fn node_count(&self) -> usize;
 
     /// Initializes the root node of the tree.
-    fn init_root_node(&mut self);
+    fn init_root_node(&mut self) -> Result<()>;
     /// Returns whether the node at `index` is fully expanded.
     /// Meaning, is there any child unvisited yet.
     fn is_fully_expanded(&self, index: TreeIndex) -> bool;
@@ -36,7 +38,7 @@ pub trait TreeHolder<A>: Default {
     fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32]) -> TreeIndex;
 
     /// Updates the value of the node at `index` with the given reward.
-    fn update_node_value(&mut self, index: TreeIndex, reward: f64);
+    fn update_node_value(&mut self, index: TreeIndex, reward: f32);
 
     /// Increases the visit count of the node at `index` by one.
     fn increase_node_visit_count(&mut self, index: TreeIndex);
@@ -94,14 +96,18 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         self.actions.len()
     }
 
-    fn init_root_node(&mut self) {
-        assert!(self.actions.is_empty(), "Tree already initialized");
+    fn init_root_node(&mut self) -> Result<()> {
+        if !self.actions.is_empty() {
+            return Err(TreeNodeInitializationFailed);
+        }
         self.actions.push(None);
         self.visit_counts.push(0);
         self.rewards.push(0.0);
         self.policy.push(0.0);
         self.children_start_index.push(None);
         self.children_count.push(0);
+
+        Ok(())
     }
 
     fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32]) -> TreeIndex {
@@ -124,8 +130,8 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         TreeIndex::new(start_index)
     }
 
-    fn update_node_value(&mut self, index: TreeIndex, reward: f64) {
-        self.rewards[index.index()] += reward as f32;
+    fn update_node_value(&mut self, index: TreeIndex, reward: f32) {
+        self.rewards[index.index()] += reward;
     }
 
     fn increase_node_visit_count(&mut self, index: TreeIndex) {
@@ -225,7 +231,6 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
     fn is_empty(&self) -> bool {
         self.actions.is_empty()
     }
-    
 }
 #[cfg(test)]
 mod tests {
@@ -247,7 +252,7 @@ mod tests {
     #[test]
     fn test_default_adjacency_tree() {
         let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-        tree.init_root_node();
+        tree.init_root_node().unwrap();
         assert_eq!(tree.visit(TreeIndex::root()), 0);
         assert!(!tree.is_fully_expanded(TreeIndex::root()));
     }
@@ -255,7 +260,7 @@ mod tests {
     #[test]
     fn test_expand_node() {
         let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-        tree.init_root_node();
+        tree.init_root_node().unwrap();
         let actions = vec!['a', 'b', 'c'];
         let policy = vec![0.2, 0.5, 0.3];
         let child_index = tree.expand_node(TreeIndex::root(), &actions, &policy);
@@ -266,7 +271,7 @@ mod tests {
     #[test]
     fn test_update_and_visit() {
         let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-        tree.init_root_node();
+        tree.init_root_node().unwrap();
         let actions = vec!['a', 'b'];
         let policy = vec![0.6, 0.4];
         let child_index = tree.expand_node(TreeIndex::root(), &actions, &policy);
@@ -281,7 +286,7 @@ mod tests {
     #[test]
     fn test_children_methods() {
         let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
-        tree.init_root_node();
+        tree.init_root_node().unwrap();
         let actions = vec!['x', 'y', 'z'];
         let policy = vec![0.3, 0.4, 0.3];
         tree.expand_node(TreeIndex::root(), &actions, &policy);
@@ -289,7 +294,7 @@ mod tests {
         for i in 0..3 {
             let child = tree.child_index(TreeIndex::root(), i);
             tree.increase_node_visit_count(child);
-            tree.update_node_value(child, (i + 1) as f64);
+            tree.update_node_value(child, (i + 1) as f32);
         }
 
         let visits = tree.children_visits(TreeIndex::root());

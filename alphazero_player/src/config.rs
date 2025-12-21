@@ -35,7 +35,6 @@ impl Default for BatcherConfig {
 
 #[derive(Debug, Clone)]
 pub struct RunnerConfig {
-    pub num_iterations: usize,
     pub threads: usize,
     pub parallel_games: usize,
 }
@@ -43,7 +42,6 @@ pub struct RunnerConfig {
 impl Default for RunnerConfig {
     fn default() -> Self {
         RunnerConfig {
-            num_iterations: 400,
             threads: 6,
             parallel_games: 200,
         }
@@ -74,9 +72,7 @@ fn create_batcher_config() -> BatcherConfig {
 fn create_runner_config() -> RunnerConfig {
     let threads = get_env_var_usize("PLAY_CORES", 6);
     let parallel_games = get_env_var_usize("PARALLEL_GAMES", 200);
-    let num_iterations = get_env_var_usize("NUM_ITERATIONS", 400);
     RunnerConfig {
-        num_iterations,
         threads,
         parallel_games,
     }

@@ -7,10 +7,8 @@ use tokio::sync::Mutex;
 #[get("/status")]
 async fn status(
     config: web::Data<ApplicationConfig>,
-    runner_service: web::Data<Arc<Mutex<RunnerService>>>,
+    runner_service: web::Data<Arc<RunnerService>>,
 ) -> ServerStatus {
-    let runner_service = runner_service.lock().await;
-
     let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
             threads: config.runner_config.threads,
@@ -34,13 +32,13 @@ async fn status(
 }
 
 #[get("/play")]
-async fn start_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
-    let result = data.lock().await.start();
-    if let Err(e) = result {
-        return HttpResponse::InternalServerError().json(ServerMessage {
-            message: format!("Could not start play: {}", e),
-        });
-    }
+async fn start_play(_data: web::Data<Arc<RunnerService>>) -> HttpResponse {
+    // let result = data.start();
+    // if let Err(e) = result {
+    //     return HttpResponse::InternalServerError().json(ServerMessage {
+    //         message: format!("Could not start play: {}", e),
+    //     });
+    // }
 
     HttpResponse::Ok().json(ServerMessage {
         message: "Play started".to_string(),

@@ -1,3 +1,6 @@
+#[cfg(feature = "chess")]
+use crate::runner::chess::{Chess, ChessConfig};
+use crate::{config::ApplicationConfig, inference::InferenceService};
 use actix_web::{
     middleware::Logger,
     web::{scope, Data, ServiceConfig},
@@ -7,9 +10,6 @@ use alphazero_nn::{AlphaZeroNN, PolicyOutputType};
 use candle_core::{DType, Device, Shape};
 use candle_nn::{VarBuilder, VarMap};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-
-use crate::{config::ApplicationConfig, inference::InferenceService};
 
 mod api;
 mod config;
@@ -43,14 +43,24 @@ async fn main() -> std::io::Result<()> {
         inference::InferenceModusRequest::Evaluator(vec![]),
     ));
 
-    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(
-        config.runner_config.clone(),
-        inference_service.clone(),
-        device.clone(),
-    )));
+    let mut runner_service = runner::RunnerService::new(config.runner_config.clone());
+
+    #[cfg(feature = "chess")]
+    runner_service
+        .start::<Chess>(ChessConfig {
+            num_iterations: 300,
+            device: device.clone(),
+            inference_service: inference_service.clone(),
+            discount_factor: 1.0,
+            c1: 1.25,
+            c2: 19652.0,
+        })
+        .unwrap();
 
     let host = format!("{}:{}", config.host, config.port);
     let workers = config.server_workers;
+
+    let runner_service = Arc::new(runner_service);
 
     HttpServer::new(move || {
         App::new()

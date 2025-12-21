@@ -1,20 +1,93 @@
-use candle_core::{Result, Shape, Tensor};
+//! AlphaZero Neural Network Implementation
+//!
+//! This module provides the core neural network architecture for AlphaZero-style game AI.
+//! It implements a convolutional neural network with residual blocks, outputting both a
+//! policy head (move probabilities) and a value head (position evaluation).
+//!
+//! # Architecture Overview
+//!
+//! The network consists of:
+//! - **Input Block**: Initial convolutional layer processing game state
+//! - **Residual Blocks**: Multiple residual blocks for feature extraction
+//! - **Policy Head**: Outputs move probabilities for all legal moves
+//! - **Value Head**: Outputs scalar value representing position advantage
+//!
+//! # Example
+//!
+//! ```ignore
+//! let config = Config::new(119, 19, 256, 3, Shape::from_dims(&[8, 8]), PolicyOutputType::Conv(73));
+//! let model = AlphaZeroNN::new(config, vb)?;
+//! let (policy, value) = model.forward_t(&input, false)?;
+//! ```
+
+use std::collections::HashMap;
+
+use candle_core::{Device, Result, Shape, Tensor};
 use candle_nn::{
     BatchNorm, BatchNormConfig, Conv2d, Conv2dConfig, Linear, ModuleT, VarBuilder, batch_norm,
     conv2d, linear, linear_no_bias,
 };
 
-pub struct Config {
-    pub n_input_channels: usize,
-    pub n_residual_blocks: usize,
-    pub n_filters: usize,
+/// Trait for game implementations compatible with AlphaZero training and inference.
+///
+/// Types implementing this trait define how game states are encoded as tensors,
+/// and how policy outputs are decoded back to moves.
+pub trait AlphaGame {
+    /// The type representing a move in this game
+    type MoveType;
+    /// The type representing a game state
+    type GameState: Default + Clone;
 
+    /// Returns the shape of the tensor input for this game
+    fn tensor_input_shape() -> Shape;
+
+    /// Returns how policy output should be structured (flat vector or convolutional)
+    fn policy_output_type() -> PolicyOutputType;
+
+    /// Returns the number of historical game states to include in the input
+    fn history_length() -> usize;
+
+    /// Encodes game states into a batch tensor for neural network input.
+    /// The input is a slice of game states, with the last element being the current state.
+    /// The amount of states should be smaller or equal to `history_length()`.
+    fn encode_game_state(states: &[Self::GameState], device: &Device) -> Tensor;
+
+    /// Decodes policy tensor output into move probabilities
+    fn decode_policy_tensor(
+        policy_tensor: &candle_core::Tensor,
+        legal_moves: &[Self::MoveType],
+    ) -> Result<HashMap<Self::MoveType, f32>>;
+}
+
+/// Configuration for the AlphaZero neural network architecture.
+///
+/// Defines the number of layers, channels, and kernel sizes for the network.
+pub struct Config {
+    /// Number of input channels (e.g., number of features per board square)
+    pub n_input_channels: usize,
+    /// Number of residual blocks in the network body
+    pub n_residual_blocks: usize,
+    /// Number of filters/channels throughout the network
+    pub n_filters: usize,
+    /// Kernel size for convolutional layers (must be odd)
     pub kernel_size: usize,
+    /// Spatial dimensions of the game board (e.g., [8, 8] for chess)
     pub game_shape: Shape,
+    /// Policy output configuration (Flat vector or Conv output)
     pub policy_output_type: PolicyOutputType,
 }
 
 impl Config {
+    /// Creates a new network configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_input_channels` - Number of input feature channels
+    /// * `n_residual_blocks` - Number of residual blocks in the body
+    /// * `n_filters` - Number of filters in each layer
+    /// * `kernel_size` - Convolution kernel size (should be odd)
+    /// * `game_shape` - Board shape as a Shape object
+    /// * `policy_output_type` - Policy head output format
     pub fn new(
         n_input_channels: usize,
         n_residual_blocks: usize,
@@ -34,16 +107,29 @@ impl Config {
     }
 }
 
+/// The main AlphaZero neural network model.
+///
+/// Combines an input block, residual body, and dual policy/value heads
+/// to implement the AlphaZero architecture.
 #[derive(Debug)]
 pub struct AlphaZeroNN {
     input_block: InputBlock,
     residual_blocks: Vec<ResidualBlock>,
-
     policy_head: PolicyHead,
     value_head: ValueHead,
 }
 
 impl AlphaZeroNN {
+    /// Creates a new AlphaZero neural network with the given configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Network architecture configuration
+    /// * `vb` - Variable builder for initializing model parameters
+    ///
+    /// # Returns
+    ///
+    /// A new `AlphaZeroNN` instance with randomly initialized weights
     pub fn new(config: Config, vb: VarBuilder) -> Result<Self> {
         let input_block = InputBlock::new(
             config.n_input_channels,
@@ -78,6 +164,16 @@ impl AlphaZeroNN {
         })
     }
 
+    /// Forward pass through the network.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Input tensor of shape [batch_size, n_input_channels, ...game_shape]
+    /// * `train` - Whether the network is in training mode (affects batch norm)
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (policy_output, value_output) tensors
     pub fn forward_t(&self, input: &Tensor, train: bool) -> Result<(Tensor, Tensor)> {
         let mut x = input.apply_t(&self.input_block, train)?;
 
@@ -92,6 +188,9 @@ impl AlphaZeroNN {
     }
 }
 
+/// Initial processing block that projects game state to hidden dimension.
+///
+/// Applies initial convolutions and batch normalization to the input.
 #[derive(Debug)]
 struct InputBlock {
     input: Conv2d,
@@ -100,6 +199,7 @@ struct InputBlock {
 }
 
 impl InputBlock {
+    /// Creates a new input block.
     fn new(
         input_channel: usize,
         output_channel: usize,
@@ -153,6 +253,10 @@ impl ModuleT for InputBlock {
             .relu()
     }
 }
+/// A residual block with skip connections.
+///
+/// Implements the residual connection pattern where input is added to output,
+/// allowing for very deep networks.
 #[derive(Debug)]
 struct ResidualBlock {
     conv1: Conv2d,
@@ -162,6 +266,7 @@ struct ResidualBlock {
 }
 
 impl ResidualBlock {
+    /// Creates a new residual block.
     fn new(n_filters: usize, kernel_size: usize, vb: VarBuilder) -> Result<Self> {
         let conv_config = Conv2dConfig {
             padding: kernel_size / 2,
@@ -213,18 +318,28 @@ impl ModuleT for ResidualBlock {
     }
 }
 
+/// Specifies the output format for the policy head.
 #[derive(Debug)]
 pub enum PolicyOutputType {
+    /// Flat vector output with fixed number of moves
     Flat(usize),
+    /// Convolutional output with spatial dimensions (one channel per move type)
     Conv(usize),
 }
 
+/// Internal enum for policy output layer implementation
 #[derive(Debug)]
 enum PolicyOutputLayer {
+    /// Linear layer for flat output
     Flat(Linear),
+    /// Convolutional layer for spatial output
     Conv(Conv2d),
 }
 
+/// Policy head that outputs move probabilities.
+///
+/// Processes features from the residual body and outputs either a flat
+/// vector or spatial policy depending on configuration.
 #[derive(Debug)]
 struct PolicyHead {
     conv1: Conv2d,
@@ -233,6 +348,7 @@ struct PolicyHead {
 }
 
 impl PolicyHead {
+    /// Creates a new policy head.
     fn new(
         features: usize,
         output: PolicyOutputType,
@@ -290,6 +406,10 @@ impl ModuleT for PolicyHead {
     }
 }
 
+/// Value head that estimates position evaluation.
+///
+/// Processes features from the residual body through convolution and
+/// fully-connected layers to output a single scalar value in [-1, 1].
 #[derive(Debug)]
 struct ValueHead {
     conv1: Conv2d,
@@ -299,6 +419,7 @@ struct ValueHead {
 }
 
 impl ValueHead {
+    /// Creates a new value head.
     fn new(channels: usize, shape: &Shape, vb: VarBuilder) -> Result<Self> {
         let conv1 = conv2d(
             channels,
