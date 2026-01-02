@@ -26,7 +26,7 @@ async fn status(
         playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {
-            max_batch_size: config.batcher_config.max_batch_size,
+            max_batch_size: config.inference_config.max_batch_size,
         },
     }
 }

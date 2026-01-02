@@ -1,13 +1,17 @@
 #[cfg(feature = "chess")]
 use crate::runner::chess::{Chess, ChessConfig};
-use crate::{config::ApplicationConfig, inference::InferenceService};
+use crate::{
+    config::ApplicationConfig,
+    error::{Error, Result},
+    inference::InferenceService,
+};
 use actix_web::{
     middleware::Logger,
     web::{scope, Data, ServiceConfig},
     App, HttpServer,
 };
-use alphazero_nn::{AlphaZeroNN, PolicyOutputType};
-use candle_core::{DType, Device, Shape};
+use alphazero_nn::AlphaZeroNN;
+use candle_core::{DType, Device};
 use candle_nn::{VarBuilder, VarMap};
 use std::sync::Arc;
 
@@ -29,20 +33,17 @@ async fn main() -> std::io::Result<()> {
 
     let device = Device::cuda_if_available(0).expect("Could not get device");
 
-    let (_model, _vb) = load_model(&device);
+    tracing::info!("Using device: {:?}", device);
 
-    tracing::info!("Model loaded on device: {:?}", device);
+    let (_model, _vb) =
+        load_model(&device, config.alpha_zero_config.clone()).expect("Could not load model");
+
+    tracing::info!("Model loaded");
 
     _vb.save("./test.safetensors")
         .expect("Could not save model");
 
-    // TODO: inference service really should be owned by a runner? And the runner service by the API server?
-    // TODO: rethink ownership model here, but I think that we need to have an inference service per runner service at least,
-    // so that we can stop/start them independently on a different modus.
-    let inference_service = Arc::new(InferenceService::new(
-        config.batcher_config.clone(),
-        inference::InferenceModusRequest::Evaluator(vec![]),
-    ));
+    let inference_service = Arc::new(InferenceService::new(config.inference_config.clone(), None));
 
     let mut runner_service = runner::RunnerService::new(config.runner_config.clone());
 
@@ -93,7 +94,10 @@ enum Game {
     MatchThreeConnectFour,
 }
 
-fn load_model(device: &Device) -> (AlphaZeroNN, VarMap) {
+fn load_model(
+    device: &Device,
+    alpha_zero_config: alphazero_nn::Config,
+) -> Result<(AlphaZeroNN, VarMap)> {
     tracing::info_span!("load model").in_scope(|| {
         let (vb, varmap) = tracing::info_span!("create vars")
             .record("device", format!("{:?}", device))
@@ -102,20 +106,9 @@ fn load_model(device: &Device) -> (AlphaZeroNN, VarMap) {
                 let vb = VarBuilder::from_varmap(&varmap, DType::F32, device);
                 (vb, varmap)
             });
-        let model = tracing::info_span!("create model").in_scope(|| {
-            AlphaZeroNN::new(
-                alphazero_nn::Config {
-                    n_input_channels: 17,
-                    n_residual_blocks: 10,
-                    n_filters: 256,
-                    kernel_size: 3,
-                    game_shape: Shape::from_dims(&[8, 8]),
-                    policy_output_type: PolicyOutputType::Flat(4672),
-                },
-                vb.clone(),
-            )
-            .expect("Could not create model")
-        });
-        (model, varmap)
+        let model = tracing::info_span!("create model")
+            .in_scope(|| AlphaZeroNN::new(alpha_zero_config, vb.clone()))
+            .map_err(|e| Error::ModelLoadError(format!("Could not create model: {}", e)))?;
+        Ok((model, varmap))
     })
 }

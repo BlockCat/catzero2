@@ -16,18 +16,19 @@ pub struct ApplicationConfig {
     pub port: String,
     pub server_workers: usize,
 
-    pub batcher_config: BatcherConfig,
+    pub inference_config: InferenceConfig,
     pub runner_config: RunnerConfig,
+    pub alpha_zero_config: alphazero_nn::Config,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BatcherConfig {
+pub struct InferenceConfig {
     pub max_batch_size: usize,
 }
 
-impl Default for BatcherConfig {
+impl Default for InferenceConfig {
     fn default() -> Self {
-        BatcherConfig {
+        InferenceConfig {
             max_batch_size: 200,
         }
     }
@@ -58,15 +59,16 @@ impl ApplicationConfig {
             host,
             port,
             server_workers,
-            batcher_config: create_batcher_config(),
+            inference_config: create_batcher_config(),
             runner_config: create_runner_config(),
+            alpha_zero_config: create_alpha_zero_config(),
         }
     }
 }
 
-fn create_batcher_config() -> BatcherConfig {
+fn create_batcher_config() -> InferenceConfig {
     let max_batch_size = get_env_var_usize("MAX_BATCH_SIZE", 200);
-    BatcherConfig { max_batch_size }
+    InferenceConfig { max_batch_size }
 }
 
 fn create_runner_config() -> RunnerConfig {
@@ -75,5 +77,24 @@ fn create_runner_config() -> RunnerConfig {
     RunnerConfig {
         threads,
         parallel_games,
+    }
+}
+
+#[cfg(feature = "chess")]
+fn create_alpha_zero_config() -> alphazero_nn::Config {
+    use alphazero_nn::AlphaGame as _;
+
+    let n_input_channels = get_env_var_usize("N_INPUT_CHANNELS", 17);
+    let n_residual_blocks = get_env_var_usize("N_RESIDUAL_BLOCKS", 10);
+    let kernel_size = get_env_var_usize("KERNEL_SIZE", 3);
+    let n_filters = get_env_var_usize("N_FILTERS", 256);
+
+    alphazero_nn::Config {
+        n_input_channels,
+        n_residual_blocks,
+        kernel_size,
+        game_shape: candle_core::shape::Shape::from_dims(&[8, 8]),
+        n_filters,
+        policy_output_type: crate::runner::chess::Chess::policy_output_type(),
     }
 }

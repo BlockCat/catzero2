@@ -1,7 +1,6 @@
-use std::sync::Arc;
 
 use crate::{
-    config::BatcherConfig,
+    config::InferenceConfig,
     error::{Error, Result},
     inference::batcher::{BatchService, BatcherHandle, BatcherRequest},
 };
@@ -29,19 +28,20 @@ pub enum InferenceModusRequest {
 }
 
 impl InferenceService {
-    pub fn new(config: BatcherConfig, modus: InferenceModusRequest) -> Self {
+    pub fn new(config: InferenceConfig, modus: Option<InferenceModusRequest>) -> Self {
         let modus = match modus {
-            InferenceModusRequest::SinglePlayer(model) => {
+            Some(InferenceModusRequest::SinglePlayer(model)) => {
                 let worker = InferenceWorker::new(model, config.clone());
                 InferenceModus::SinglePlayer(worker)
             }
-            InferenceModusRequest::Evaluator(models) => {
+            Some(InferenceModusRequest::Evaluator(models)) => {
                 let workers = models
                     .into_iter()
                     .map(|model| InferenceWorker::new(model, config.clone()))
                     .collect();
                 InferenceModus::Evaluator(workers)
             }
+            None => InferenceModus::None,
         };
 
         Self { modus }
@@ -97,7 +97,7 @@ struct InferenceWorker {
 }
 
 impl InferenceWorker {
-    pub fn new(model: AlphaZeroNN, config: BatcherConfig) -> Self {
+    pub fn new(model: AlphaZeroNN, config: InferenceConfig) -> Self {
         let (batch_service, worker_sender) = BatchService::new(config, model);
         let handle = batch_service.start();
         Self {

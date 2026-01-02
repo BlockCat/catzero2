@@ -62,6 +62,7 @@ pub trait AlphaGame {
 /// Configuration for the AlphaZero neural network architecture.
 ///
 /// Defines the number of layers, channels, and kernel sizes for the network.
+#[derive(Clone, Debug)]
 pub struct Config {
     /// Number of input channels (e.g., number of features per board square)
     pub n_input_channels: usize,
@@ -319,7 +320,7 @@ impl ModuleT for ResidualBlock {
 }
 
 /// Specifies the output format for the policy head.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PolicyOutputType {
     /// Flat vector output with fixed number of moves
     Flat(usize),

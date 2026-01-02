@@ -2,6 +2,7 @@ use crate::{config::RunnerConfig, runner::messages::GamePlayed};
 use alphazero_nn::AlphaGame;
 use mcts::{AlphaZeroSelectionStrategy, DefaultAdjacencyTree, GameState, StateEvaluation, MCTS};
 use std::fmt::Debug;
+use thiserror::Error;
 use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -42,9 +43,11 @@ pub trait AlphaConfigurable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RunnerError {
+    #[error("Game error: {0}")]
     GameError(anyhow::Error),
+    #[error("Operation was cancelled")]
     Cancellation,
 }
 
@@ -142,45 +145,6 @@ impl RunnerService {
         });
 
         Ok(())
-
-        // #[cfg(feature = "chess")]
-        // {
-        //     let handle = self.rt.spawn(async move {
-        //         // Create a channel for game data collection
-
-        //         use alphazero_chess::ChessWrapper;
-
-        //         // Spawn a task to handle completed games
-        //         let games_played_counter = games_played.clone();
-        //         tokio::spawn(async move {
-        //             while let Some(game) = game_rx.recv().await {
-        //                 // Log game completion
-        //                 tracing::info!("Game completed with {} moves", game.taken_actions.len());
-        //                 games_played_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        //                 // TODO: Send game data to storage/training pipeline
-        //             }
-        //         });
-
-        //         // Create the chess runner
-        //         let chess_config = ChessConfig {
-        //             num_iterations: config.num_iterations,
-        //             discount_factor: 0.99,
-        //             c1: 1.25,
-        //             c2: 19652.0,
-        //         };
-
-        //         let runner = ChessRunner::new(chess_config, game_tx, inference_sender, device);
-
-        //         RunnerService::start_async(config, rt, cancellation_token_clone, runner).await
-        //     });
-
-        //     self.handle = Some(RunnerHandle {
-        //         task: handle,
-        //         cancellation_token,
-        //     });
-
-        //     Ok(())
-        // }
     }
 
     pub fn stop(&mut self) -> bool {
@@ -255,13 +219,11 @@ async fn play_a_game<G: AlphaRunnable + 'static>(
             return Err(RunnerError::Cancellation);
         }
 
-        // Here you would use the inference_service to get policy and value predictions
-        // and then select an action based on MCTS or other logic.
-
-        // For demonstration, we will just take the first possible action.
         let possible_actions = state.get_possible_actions();
         if possible_actions.is_empty() {
-            unimplemented!("No possible actions available");
+            return Err(RunnerError::GameError(anyhow::anyhow!(
+                "No possible actions available in non-terminal state"
+            )));
         }
 
         let best_move = mcts
@@ -300,94 +262,6 @@ impl Drop for RunnerService {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Clone, Default, Debug, PartialEq, Eq)]
-    struct DummyState(isize);
-
-    impl GameState for DummyState {
-        type Action = isize;
-
-        fn current_player_id(&self) -> usize {
-            if self.0 % 2 == 0 {
-                0
-            } else {
-                1
-            }
-        }
-
-        fn get_possible_actions(&self) -> Vec<Self::Action> {
-            vec![0, 1, 2]
-        }
-
-        fn take_action(&self, _action: Self::Action) -> Self {
-            self.clone()
-        }
-
-        fn is_terminal(&self) -> Option<f32> {
-            if self.0 >= 4 {
-                Some(1.0)
-            } else if self.0 <= -4 {
-                Some(-1.0)
-            } else {
-                None
-            }
-        }
-    }
-
-    // impl SingleRunner for DummyState {
-    //     type GameState = DummyState;
-
-    //     fn tensor_input_shape(_historic_states: usize) -> Shape {
-    //         Shape::from_dims(&[1])
-    //     }
-
-    //     fn play_game(
-    //         &self,
-    //         cancellation_token: CancellationToken,
-    //     ) -> impl std::future::Future<Output = Result<GamePlayed<Self::GameState>, RunnerError>>
-    //            + Send
-    //            + Sync {
-    //         let cancellation_token = cancellation_token.clone();
-    //         async move {
-    //             let mut state = self.clone();
-    //             let mut states = Vec::new();
-    //             let mut policies = Vec::new();
-    //             let mut taken_actions = Vec::new();
-
-    //             while cancellation_token.is_cancelled() == false {
-    //                 states.push(state.clone());
-    //                 let possible_actions = state.get_possible_actions();
-    //                 let action = possible_actions[0];
-    //                 let policy: Vec<(isize, f32)> = possible_actions
-    //                     .iter()
-    //                     .map(|&a| (a, if a == action { 1.0 } else { 0.0 }))
-    //                     .collect();
-    //                 policies.push(policy);
-    //                 taken_actions.push(action);
-    //                 state = state.take_action(action);
-
-    //                 if let Some(_value) = state.is_terminal() {
-    //                     break;
-    //                 }
-    //             }
-
-    //             Ok(GamePlayed::new(
-    //                 states,
-    //                 policies,
-    //                 taken_actions,
-    //                 1.0,
-    //                 Some(1),
-    //             ))
-    //         }
-    //     }
-
-    //     fn send_game_played(
-    //         &self,
-    //         _game_played: GamePlayed<Self::GameState>,
-    //     ) -> impl std::future::Future<Output = Result<(), RunnerError>> + Send + Sync {
-    //         async move { Ok(()) }
-    //     }
-    // }
 
     #[test]
     fn game_played_accessors_return_expected_data() {

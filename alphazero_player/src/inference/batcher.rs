@@ -1,4 +1,4 @@
-use crate::config::BatcherConfig;
+use crate::config::InferenceConfig;
 use alphazero_nn::AlphaZeroNN;
 use candle_core::{Tensor, D};
 use tokio::task::JoinHandle;
@@ -28,7 +28,7 @@ pub struct BatcherResponse {
 }
 
 pub struct BatchService {
-    config: BatcherConfig,
+    config: InferenceConfig,
     cancellation_token: tokio_util::sync::CancellationToken,
     request_receiver: tokio::sync::mpsc::Receiver<BatcherRequest>,
     model: AlphaZeroNN,
@@ -36,7 +36,7 @@ pub struct BatchService {
 
 impl BatchService {
     pub fn new(
-        config: BatcherConfig,
+        config: InferenceConfig,
         model: AlphaZeroNN,
     ) -> (Self, tokio::sync::mpsc::Sender<BatcherRequest>) {
         use tokio::sync::mpsc;
