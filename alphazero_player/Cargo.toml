@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Actix
 actix-web = { workspace = true }
 
+# Tokio
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

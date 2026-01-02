@@ -31,13 +31,13 @@ pub struct BatchService {
     config: BatcherConfig,
     cancellation_token: tokio_util::sync::CancellationToken,
     request_receiver: tokio::sync::mpsc::Receiver<BatcherRequest>,
-    model: Box<AlphaZeroNN>,
+    model: AlphaZeroNN,
 }
 
 impl BatchService {
     pub fn new(
         config: BatcherConfig,
-        model: Box<AlphaZeroNN>,
+        model: AlphaZeroNN,
     ) -> (Self, tokio::sync::mpsc::Sender<BatcherRequest>) {
         use tokio::sync::mpsc;
         let (tx, rx) = mpsc::channel(config.max_batch_size * 2);

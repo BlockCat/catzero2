@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use crate::{
     config::BatcherConfig,
+    error::{Error, Result},
     inference::batcher::{BatchService, BatcherHandle, BatcherRequest},
 };
 use alphazero_nn::AlphaZeroNN;
@@ -21,7 +24,7 @@ enum InferenceModus {
 
 #[derive(Debug)]
 pub enum InferenceModusRequest {
-    SinglePlayer(Box<AlphaZeroNN>),
+    SinglePlayer(AlphaZeroNN),
     Evaluator(Vec<AlphaZeroNN>),
 }
 
@@ -35,7 +38,7 @@ impl InferenceService {
             InferenceModusRequest::Evaluator(models) => {
                 let workers = models
                     .into_iter()
-                    .map(|model| InferenceWorker::new(Box::new(model), config.clone()))
+                    .map(|model| InferenceWorker::new(model, config.clone()))
                     .collect();
                 InferenceModus::Evaluator(workers)
             }
@@ -44,41 +47,43 @@ impl InferenceService {
         Self { modus }
     }
 
-    pub fn update_model(&self, id: Option<usize>, weights: Vec<u8>) -> Result<(), anyhow::Error> {
+    pub fn update_model(&self, id: Option<usize>, weights: Vec<u8>) -> Result<()> {
         match &self.modus {
-            InferenceModus::None => Err(anyhow::anyhow!(
-                "InferenceService modus is None, cannot update model"
+            InferenceModus::None => Err(Error::ModelLoadError(
+                "InferenceService modus is None, cannot update model".to_string(),
             )),
             InferenceModus::SinglePlayer(inference_worker) => {
                 inference_worker.update_model(weights)
             }
+
             InferenceModus::Evaluator(_inference_workers) => {
                 if let Some(player_id) = id {
                     let inference_worker = _inference_workers
                         .get(player_id)
-                        .ok_or_else(|| anyhow::anyhow!("Invalid player ID"))?;
+                        .ok_or_else(|| Error::ModelLoadError("Invalid player ID".to_string()))?;
                     inference_worker.update_model(weights)
                 } else {
-                    Err(anyhow::anyhow!(
-                        "Must provide player ID to update model in Evaluator modus"
+                    Err(Error::ModelLoadError(
+                        "Must provide player ID to update model in Evaluator modus".to_string(),
                     ))
                 }
             }
         }
     }
 
-    pub async fn request(&self, request: InferenceRequest) -> InferenceResponse {
+    pub async fn request(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         match &self.modus {
-            InferenceModus::None => {
-                panic!("InferenceService modus is None");
-            }
+            InferenceModus::None => Err(Error::InferenceError(
+                "InferenceService modus is None".to_string(),
+            )),
             InferenceModus::SinglePlayer(inference_worker) => {
                 inference_worker.send_request(request).await
             }
             InferenceModus::Evaluator(inference_workers) => {
                 let inference_worker = inference_workers
                     .get(request.player_id as usize)
-                    .expect("Invalid player ID");
+                    .ok_or_else(|| Error::InferenceError("Invalid player ID".to_string()))?;
+
                 inference_worker.send_request(request).await
             }
         }
@@ -92,7 +97,7 @@ struct InferenceWorker {
 }
 
 impl InferenceWorker {
-    pub fn new(model: Box<AlphaZeroNN>, config: BatcherConfig) -> Self {
+    pub fn new(model: AlphaZeroNN, config: BatcherConfig) -> Self {
         let (batch_service, worker_sender) = BatchService::new(config, model);
         let handle = batch_service.start();
         Self {
@@ -101,7 +106,7 @@ impl InferenceWorker {
         }
     }
 
-    pub async fn send_request(&self, request: InferenceRequest) -> InferenceResponse {
+    pub async fn send_request(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let batcher_request = BatcherRequest {
             state_tensor: request.state_tensor,
@@ -110,18 +115,20 @@ impl InferenceWorker {
         self.worker_sender
             .send(batcher_request)
             .await
-            .expect("Could not send request to batcher");
-        let batch_response = response_rx
-            .await
-            .expect("Could not receive response from batcher");
+            .map_err(|e| {
+                Error::InferenceError(format!("Failed to send request to batcher: {}", e))
+            })?;
+        let batch_response = response_rx.await.map_err(|e| {
+            Error::InferenceError(format!("Failed to receive response from batcher: {}", e))
+        })?;
 
-        InferenceResponse {
+        Ok(InferenceResponse {
             output_tensor: batch_response.output_tensor,
             value: batch_response.value,
-        }
+        })
     }
 
-    pub fn update_model(&self, _weights: Vec<u8>) -> Result<(), anyhow::Error> {
+    pub fn update_model(&self, _weights: Vec<u8>) -> Result<()> {
         todo!()
         // self.worker_sender
         //     .try_send(BatcherRequest::UpdateModel { weights })

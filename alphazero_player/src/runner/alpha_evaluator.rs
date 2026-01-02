@@ -41,7 +41,8 @@ impl<G: AlphaRunnable + Send + Sync> StateEvaluation<G::GameState> for AlphaEval
                 player_id: state.current_player_id() as u32,
                 state_tensor: tensor,
             })
-            .await;
+            .await
+            .expect("Could not request an inference");
 
         let moves = state.get_possible_actions();
 

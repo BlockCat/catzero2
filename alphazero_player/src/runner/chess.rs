@@ -1,6 +1,6 @@
 use crate::{
-    inference::{InferenceRequest, InferenceService},
-    runner::{alpha_evaluator::AlphaEvaluator, AlphaConfigurable, AlphaRunnable, GamePlayed},
+    inference::InferenceService,
+    runner::{alpha_evaluator::AlphaEvaluator, AlphaConfigurable, AlphaRunnable},
 };
 use alphazero_chess::{
     chess::{BitBoard, ChessMove, Color, Piece},
@@ -9,9 +9,7 @@ use alphazero_chess::{
 use alphazero_nn::{AlphaGame, PolicyOutputType};
 use candle_core::{Device, Shape, Tensor};
 use core::panic;
-use mcts::{GameState, ModelEvaluation, StateEvaluation};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::mpsc::{self};
 
 /// Number of standard planes (current player, move count, castling rights (white/black) x (kingside/queenside))
 const STANDARD_PLANES: usize = 6; // ignoring no progress plane for now
@@ -144,112 +142,6 @@ impl AlphaConfigurable for ChessConfig {
     }
     fn c2(&self) -> f32 {
         self.c2
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ChessRunner {
-    config: ChessConfig,
-    channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
-    batcher: Arc<InferenceService>,
-    device: Device,
-}
-
-impl ChessRunner {
-    pub fn new(
-        config: ChessConfig,
-        channel: mpsc::Sender<GamePlayed<ChessWrapper>>,
-        batcher: Arc<InferenceService>,
-        device: Device,
-    ) -> Self {
-        ChessRunner {
-            config,
-            channel,
-            batcher,
-            device,
-        }
-    }
-}
-
-struct ChessActorAlphaEvaluator {
-    pub historic_moves: usize,
-    pub batcher: Arc<InferenceService>,
-    pub device: Device,
-}
-
-impl StateEvaluation<ChessWrapper> for ChessActorAlphaEvaluator {
-    async fn evaluation(
-        &self,
-        state: &ChessWrapper,
-        previous_state: &[ChessWrapper],
-    ) -> ModelEvaluation<ChessMove> {
-        let state_tensor = {
-            let shape = Chess::tensor_input_shape();
-
-            let mut slice = vec![0.0f32; shape.elem_count()];
-            add_state(&mut slice[0..8 * 8 * BOARD_STATE_PLANES], state);
-
-            previous_state
-                .iter()
-                .rev()
-                .take(self.historic_moves - 1)
-                .enumerate()
-                .for_each(|(i, prev_state)| {
-                    let start = (i + 1) * BOARD_STATE_PLANES * 8 * 8;
-                    let end = start + BOARD_STATE_PLANES * 8 * 8;
-                    add_state(&mut slice[start..end], prev_state);
-                });
-
-            let standard_plane_start = self.historic_moves * BOARD_STATE_PLANES * 8 * 8usize;
-            let plane_size = 8 * 8usize;
-
-            let colour = match state.0.side_to_move() {
-                Color::White => 1.0f32,
-                Color::Black => 0.0f32,
-            };
-            let move_count = previous_state.len() as f32;
-            let white_castle = state.0.castle_rights(Color::White);
-            let black_castle = state.0.castle_rights(Color::Black);
-
-            slice[standard_plane_start..standard_plane_start + plane_size]
-                .copy_from_slice(&vec![colour; plane_size]);
-            slice[standard_plane_start + plane_size..standard_plane_start + 2 * plane_size]
-                .copy_from_slice(&vec![move_count; plane_size]);
-            slice[standard_plane_start + 2 * plane_size..standard_plane_start + 3 * plane_size]
-                .copy_from_slice(&vec![white_castle.has_kingside() as i32 as f32; plane_size]);
-            slice[standard_plane_start + 3 * plane_size..standard_plane_start + 4 * plane_size]
-                .copy_from_slice(&vec![
-                    white_castle.has_queenside() as i32 as f32;
-                    plane_size
-                ]);
-            slice[standard_plane_start + 4 * plane_size..standard_plane_start + 5 * plane_size]
-                .copy_from_slice(&vec![black_castle.has_kingside() as i32 as f32; plane_size]);
-            slice[standard_plane_start + 5 * plane_size..standard_plane_start + 6 * plane_size]
-                .copy_from_slice(&vec![
-                    black_castle.has_queenside() as i32 as f32;
-                    plane_size
-                ]);
-
-            Tensor::from_slice(&slice, shape, &self.device).expect("Could not create tensor")
-        };
-
-        let player_id = state.0.side_to_move().to_index() as u32;
-
-        let response = self
-            .batcher
-            .request(InferenceRequest {
-                player_id,
-                state_tensor,
-            })
-            .await;
-
-        // Convert flat policy tensor to sparse policy vector for legal moves
-        let possible_actions = state.get_possible_actions();
-        let policy_vec =
-            convert_policy_tensor_to_action_probs(&response.output_tensor, &possible_actions)
-                .expect("Failed to convert policy tensor");
-
-        ModelEvaluation::new(policy_vec, response.value)
     }
 }
 
