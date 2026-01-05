@@ -28,7 +28,7 @@ impl<G: AlphaRunnable + Send + Sync> StateEvaluation<G::GameState> for AlphaEval
         &self,
         state: &G::GameState,
         previous_state: &[G::GameState],
-    ) -> ModelEvaluation<G::MoveType> {
+    ) -> mcts::Result<ModelEvaluation<G::MoveType>> {
         let mut states = Vec::with_capacity(previous_state.len() + 1);
         states.extend_from_slice(previous_state);
         states.push(state.clone());
@@ -42,13 +42,13 @@ impl<G: AlphaRunnable + Send + Sync> StateEvaluation<G::GameState> for AlphaEval
                 state_tensor: tensor,
             })
             .await
-            .expect("Could not request an inference");
+            .map_err(|e| mcts::Error::UnknownError(format!("Inference request failed: {}", e)))?;
 
         let moves = state.get_possible_actions();
 
         let policy = G::decode_policy_tensor(&response.output_tensor, &moves)
-            .expect("Failed to decode policy tensor");
+            .map_err(|e| mcts::Error::UnknownError(format!("Policy decoding failed: {}", e)))?;
 
-        ModelEvaluation::new(policy, response.value)
+        Ok(ModelEvaluation::new(policy, response.value))
     }
 }

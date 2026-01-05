@@ -1,5 +1,3 @@
-#[cfg(feature = "chess")]
-use crate::runner::chess::{Chess, ChessConfig};
 use crate::{
     config::ApplicationConfig,
     error::{Error, Result},
@@ -14,6 +12,7 @@ use alphazero_nn::AlphaZeroNN;
 use candle_core::{DType, Device};
 use candle_nn::{VarBuilder, VarMap};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 mod api;
 mod config;
@@ -45,24 +44,24 @@ async fn main() -> std::io::Result<()> {
 
     let inference_service = Arc::new(InferenceService::new(config.inference_config.clone(), None));
 
-    let mut runner_service = runner::RunnerService::new(config.runner_config.clone());
-
-    #[cfg(feature = "chess")]
-    runner_service
-        .start::<Chess>(ChessConfig {
-            num_iterations: 300,
-            device: device.clone(),
-            inference_service: inference_service.clone(),
-            discount_factor: 1.0,
-            c1: 1.25,
-            c2: 19652.0,
-        })
-        .unwrap();
+    // #[cfg(feature = "chess")]
+    // runner_service
+    //     .start::<Chess>(ChessConfig {
+    //         num_iterations: 300,
+    //         device: device.clone(),
+    //         inference_service: inference_service.clone(),
+    //         discount_factor: 1.0,
+    //         c1: 1.25,
+    //         c2: 19652.0,
+    //     })
+    //     .unwrap();
 
     let host = format!("{}:{}", config.host, config.port);
     let workers = config.server_workers;
 
-    let runner_service = Arc::new(runner_service);
+    let runner_service = Arc::new(Mutex::new(runner::RunnerService::new(
+        config.runner_config.clone(),
+    )));
 
     HttpServer::new(move || {
         App::new()
@@ -87,7 +86,7 @@ fn collect_routes(cfg: &mut ServiceConfig) {
         .service(api::update_model);
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 enum Game {
     Chess,
     PacoSaco,

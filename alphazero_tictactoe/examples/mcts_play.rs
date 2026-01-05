@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alphazero_tictactoe::{GameResult, Move, TicTacToe};
-use mcts::{GameState, StateEvaluation, selection::StandardSelectionStrategy};
+use mcts::{GameState, StateEvaluation, error::Result, selection::StandardSelectionStrategy};
 use rand::seq::IteratorRandom;
 
 fn main() {
@@ -53,7 +53,11 @@ fn main() {
 struct TicTacToeStateEvaluation;
 
 impl StateEvaluation<TicTacToe> for TicTacToeStateEvaluation {
-    async fn evaluation(&self, state: &TicTacToe, _: &[TicTacToe]) -> mcts::ModelEvaluation<Move> {
+    async fn evaluation(
+        &self,
+        state: &TicTacToe,
+        _: &[TicTacToe],
+    ) -> Result<mcts::ModelEvaluation<Move>> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
 
@@ -84,7 +88,7 @@ impl StateEvaluation<TicTacToe> for TicTacToeStateEvaluation {
             }
         };
 
-        mcts::ModelEvaluation::new(policy, value)
+        Ok(mcts::ModelEvaluation::new(policy, value))
     }
 }
 

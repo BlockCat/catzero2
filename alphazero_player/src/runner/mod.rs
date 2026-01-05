@@ -229,7 +229,7 @@ async fn play_a_game<G: AlphaRunnable + 'static>(
         let best_move = mcts
             .search_for_iterations_async(&state, config.num_iterations())
             .await
-            .expect("MCTS search failed");
+            .map_err(|e| RunnerError::GameError(anyhow::anyhow!("MCTS search failed: {:?}", e)))?;
 
         states.push(state.clone());
         policies.push(mcts.get_action_probabilities());

@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use crate::{config::ApplicationConfig, runner::RunnerService, Game};
+use crate::{config::ApplicationConfig, inference::InferenceService, runner::RunnerService, Game};
 use actix_web::{get, http::header::ContentType, post, *};
+use candle_core::Device;
 use tokio::sync::Mutex;
 
 #[get("/status")]
 async fn status(
     config: web::Data<ApplicationConfig>,
-    runner_service: web::Data<Arc<RunnerService>>,
+    runner_service: web::Data<Arc<Mutex<RunnerService>>>,
 ) -> ServerStatus {
+    let runner_service = runner_service.lock().await;
     let play_info = if runner_service.is_running() {
         Some(PlayingInfo {
             threads: config.runner_config.threads,
@@ -31,14 +33,64 @@ async fn status(
     }
 }
 
-#[get("/play")]
-async fn start_play(_data: web::Data<Arc<RunnerService>>) -> HttpResponse {
-    // let result = data.start();
-    // if let Err(e) = result {
-    //     return HttpResponse::InternalServerError().json(ServerMessage {
-    //         message: format!("Could not start play: {}", e),
-    //     });
-    // }
+#[post("/play")]
+async fn start_play(
+    data: web::Data<Arc<Mutex<RunnerService>>>,
+    inference_service: web::Data<Arc<InferenceService>>,
+    device: web::Data<Device>,
+    req: web::Json<PlayGameRequest>,
+) -> HttpResponse {
+    let mut service = data.lock().await;
+    if service.is_running() {
+        return HttpResponse::Ok().json(ServerMessage {
+            message: "Play is already running".to_string(),
+        });
+    }
+
+    let result = match req.game {
+        Game::Chess => {
+            #[cfg(feature = "chess")]
+            {
+                // service
+                //     .start::<Chess>(ChessConfig {
+                //         num_iterations: 300,
+                //         device: Device::cuda_if_available(0).unwrap(),
+                //         inference_service: inference_service.clone(),
+                //         discount_factor: 1.0,
+                //         c1: 1.25,
+                //         c2: 19652.0,
+                //     })
+                //     .unwrap();
+
+                use crate::runner::chess::{Chess, ChessConfig};
+                service.start::<Chess>(ChessConfig {
+                    num_iterations: req.num_iterations,
+                    c1: req.c1,
+                    c2: req.c2,
+                    discount_factor: req.discount_factor,
+                    inference_service: inference_service.get_ref().clone(),
+                    device: device.get_ref().clone(),
+                })
+            }
+            #[cfg(not(feature = "chess"))]
+            {
+                return HttpResponse::BadRequest().json(ServerMessage {
+                    message: "Chess support is not enabled in this build.".to_string(),
+                });
+            }
+        }
+        _ => {
+            return HttpResponse::BadRequest().json(ServerMessage {
+                message: "Unsupported game".to_string(),
+            });
+        }
+    };
+
+    if let Err(e) = result {
+        return HttpResponse::InternalServerError().json(ServerMessage {
+            message: format!("Could not start play: {}", e),
+        });
+    }
 
     HttpResponse::Ok().json(ServerMessage {
         message: "Play started".to_string(),
@@ -127,4 +179,13 @@ impl Responder for ServerStatus {
             .content_type(ContentType::json())
             .body(body)
     }
+}
+
+#[derive(serde::Deserialize)]
+struct PlayGameRequest {
+    game: Game,
+    num_iterations: usize,
+    c1: f32,
+    c2: f32,
+    discount_factor: f32,
 }

@@ -13,6 +13,6 @@ pub enum MCTSError {
     #[error("Error during node expansion in the MCTS tree.")]
     ExpansionError,
 
-    #[error("An unspecified error occurred in the MCTS algorithm.")]
-    UnknownError,
+    #[error("An unspecified error occurred in the MCTS algorithm: {0}")]
+    UnknownError(String),
 }

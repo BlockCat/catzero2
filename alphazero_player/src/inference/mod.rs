@@ -1,4 +1,3 @@
-
 use crate::{
     config::InferenceConfig,
     error::{Error, Result},

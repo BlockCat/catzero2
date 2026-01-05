@@ -33,7 +33,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 [features]
-default = ["chess", "cuda"]
+default = ["chess"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "alphazero_nn/cuda"]
 cudnn = ["candle-core/cudnn", "candle-nn/cudnn", "alphazero_nn/cudnn"]
 

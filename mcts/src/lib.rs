@@ -1,10 +1,10 @@
-use error::Result;
-use rand::{rng, seq::IteratorRandom};
-pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
-use std::{collections::HashMap, fmt::Debug, future::Future, iter::zip, time::Duration};
-pub use tree::{DefaultAdjacencyTree, TreeHolder, TreeIndex};
-
 use crate::error::MCTSError::{self, MoveNotFound};
+use rand::{rng, seq::IteratorRandom};
+use std::{collections::HashMap, fmt::Debug, future::Future, iter::zip, time::Duration};
+
+pub use error::{MCTSError as Error, Result};
+pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
+pub use tree::{DefaultAdjacencyTree, TreeHolder, TreeIndex};
 
 pub mod error;
 pub mod selection;
@@ -149,7 +149,7 @@ impl<
         let node_evaluation: ModelEvaluation<S::Action> = self
             .state_evaluation
             .evaluation(&state, &previous_state)
-            .await;
+            .await?;
 
         self.expansion(node, node_evaluation.policy())?;
         self.backpropagation(path, node_evaluation.value());
@@ -253,7 +253,7 @@ pub trait StateEvaluation<S: GameState> {
         &self,
         state: &S,
         previous_state: &[S],
-    ) -> impl Future<Output = ModelEvaluation<S::Action>> + Send;
+    ) -> impl Future<Output = Result<ModelEvaluation<S::Action>>> + Send;
 }
 
 pub struct ModelEvaluation<C> {
@@ -335,7 +335,7 @@ mod tests {
             &self,
             state: &TestGame,
             _previous_state: &[TestGame],
-        ) -> ModelEvaluation<i32> {
+        ) -> Result<ModelEvaluation<i32>> {
             let actions = state.get_possible_actions();
             let mut policy = HashMap::new();
 
@@ -343,7 +343,7 @@ mod tests {
                 policy.insert(action, 1.0 / 3.0);
             }
 
-            ModelEvaluation::new(policy, 0.5)
+            Ok(ModelEvaluation::new(policy, 0.5))
         }
     }
 
