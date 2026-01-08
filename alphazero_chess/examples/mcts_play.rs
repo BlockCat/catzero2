@@ -1,6 +1,6 @@
 use alphazero_chess::ChessWrapper;
 use chess::{ChessMove, Game};
-use mcts::{GameState, StateEvaluation, selection::StandardSelectionStrategy};
+use mcts::{GameState, Result, StateEvaluation, selection::StandardSelectionStrategy};
 
 fn main() {
     println!("Random play example for Tic Tac Toe");
@@ -69,7 +69,7 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
         &self,
         state: &ChessWrapper,
         _previous_state: &[ChessWrapper],
-    ) -> mcts::ModelEvaluation<ChessMove> {
+    ) -> Result<mcts::ModelEvaluation<ChessMove>> {
         let possible_actions = state.get_possible_actions();
         let action_count = possible_actions.len();
 
@@ -84,7 +84,7 @@ impl StateEvaluation<ChessWrapper> for ChessStateEvaluation {
             chess::BoardStatus::Ongoing => random_play(state),
         };
 
-        mcts::ModelEvaluation::new(policy, value)
+        Ok(mcts::ModelEvaluation::new(policy, value))
     }
 }
 

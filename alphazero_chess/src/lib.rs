@@ -1,5 +1,5 @@
 use chess::{Board, MoveGen};
-use mcts::GameState;
+use mcts::{GameState, TerminalResult};
 
 pub use chess;
 
@@ -114,11 +114,12 @@ impl GameState for ChessWrapper {
         ChessWrapper(new_board)
     }
 
-    fn is_terminal(&self) -> Option<f32> {
+    fn is_terminal(&self) -> Option<TerminalResult> {
+        // When making a move, check if the game is over. Because the player to move has already changed, a checkmate here means the previous player won.
         if self.0.status() == chess::BoardStatus::Checkmate {
-            Some(1000.0)
+            Some(TerminalResult::Loss)
         } else if self.0.status() == chess::BoardStatus::Stalemate {
-            Some(0.0)
+            Some(TerminalResult::Draw)
         } else {
             None
         }
@@ -129,7 +130,7 @@ impl GameState for ChessWrapper {
 mod tests {
     use super::*;
     use chess::ChessMove;
-    use mcts::{StateEvaluation, selection::StandardSelectionStrategy};
+    use mcts::{Result, StateEvaluation, selection::StandardSelectionStrategy};
     use std::str::FromStr as _;
 
     #[test]
@@ -217,7 +218,7 @@ mod tests {
             &self,
             state: &ChessWrapper,
             _previous_state: &[ChessWrapper],
-        ) -> mcts::ModelEvaluation<ChessMove> {
+        ) -> Result<mcts::ModelEvaluation<ChessMove>> {
             let possible_actions = state.get_possible_actions();
             let action_count = possible_actions.len();
 
@@ -232,7 +233,7 @@ mod tests {
                 chess::BoardStatus::Ongoing => random_play(state),
             };
 
-            mcts::ModelEvaluation::new(policy, value)
+            Ok(mcts::ModelEvaluation::new(policy, value))
         }
     }
 
@@ -266,5 +267,41 @@ mod tests {
 
         return start_game.evaluate_position();
         // val
+    }
+
+    #[test]
+    fn test_result_fool_mate() {
+        let mut chess = ChessWrapper::new();
+
+        // Fools mate
+        for mv_str in ["f2f4", "e7e5", "g2g4", "d8h4"] {
+            let mv = chess::ChessMove::from_str(mv_str).unwrap();
+            chess = chess.take_action(mv);
+        }
+        let result = chess.is_terminal().unwrap();
+        assert_eq!(result, TerminalResult::Loss);
+        assert_eq!(
+            result.to_player_zero_perspective(chess.current_player_id()),
+            TerminalResult::Loss
+        );
+        assert_eq!(chess.current_player_id(), 0);
+    }
+
+    #[test]
+    fn test_result_white_mate() {
+        let mut chess = ChessWrapper::new();
+
+        // Fools mate
+        for mv_str in ["e2e4", "e7e5", "f1c4", "f8c5", "d1h5", "g8f6", "h5f7"] {
+            let mv = chess::ChessMove::from_str(mv_str).unwrap();
+            chess = chess.take_action(mv);
+        }
+        let result = chess.is_terminal().unwrap();
+        assert_eq!(result, TerminalResult::Loss);
+        assert_eq!(
+            result.to_player_zero_perspective(chess.current_player_id()),
+            TerminalResult::Win
+        );
+        assert_eq!(chess.current_player_id(), 1);
     }
 }

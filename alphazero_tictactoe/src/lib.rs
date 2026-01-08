@@ -1,4 +1,4 @@
-use mcts::GameState;
+use mcts::{GameState, TerminalResult};
 
 /// Represents a player in TicTacToe
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,18 +203,16 @@ impl GameState for TicTacToe {
         self.make_move(action)
     }
 
-    fn is_terminal(&self) -> Option<f32> {
+    fn is_terminal(&self) -> Option<TerminalResult> {
         match self.check_winner() {
             GameResult::Win(player) => {
-                // Return +1 if current player's opponent won (they made the winning move)
-                // Return -1 if current player lost
-                if player == self.current_player.opponent() {
-                    Some(1.0)
-                } else {
-                    Some(-1.0)
-                }
+                assert!(
+                    player != self.current_player,
+                    "Winner cannot be the current player, because they just played the winning move and turns switched."
+                );
+                Some(TerminalResult::Loss)
             }
-            GameResult::Draw => Some(0.0),
+            GameResult::Draw => Some(TerminalResult::Draw),
             GameResult::InProgress => None,
         }
     }
@@ -328,7 +326,13 @@ mod tests {
         let game = game.make_move(Move::new(0, 1)); // X
         let game = game.make_move(Move::new(1, 1)); // O
         let game = game.make_move(Move::new(0, 2)); // X wins
-        assert_eq!(game.is_terminal(), Some(1.0));
+        // XXX
+        // OO_
+        // ___
+        assert_eq!(game.is_terminal(), Some(TerminalResult::Loss));
+        assert_eq!(game.check_winner(), GameResult::Win(Player::X));
+        assert_eq!(game.current_player(), Player::O);
+        assert_eq!(game.current_player_id(), 1);
     }
 
     #[test]
@@ -420,8 +424,14 @@ mod tests {
         let game = game.make_move(Move::new(1, 2)); // X
         let game = game.make_move(Move::new(2, 0)); // O
         let game = game.make_move(Move::new(2, 1)); // X
+        // XOX
+        // OXX
+        // OXO
 
-        assert_eq!(game.is_terminal(), Some(0.0));
+        assert_eq!(game.is_terminal(), Some(TerminalResult::Draw));
+        assert_eq!(game.check_winner(), GameResult::Draw);
+        assert_eq!(game.current_player(), Player::O);
+        assert_eq!(game.current_player_id(), 1);
     }
 
     #[test]
@@ -508,8 +518,13 @@ mod tests {
         let game = game.make_move(Move::new(1, 1)); // O
         let game = game.make_move(Move::new(2, 2)); // X
         let game = game.make_move(Move::new(1, 2)); // O wins
+        // XX_
+        // OOO
+        // __X
         assert_eq!(game.check_winner(), GameResult::Win(Player::O));
-        assert_eq!(game.is_terminal(), Some(1.0)); // O just moved and won
+        assert_eq!(game.is_terminal(), Some(TerminalResult::Loss)); // O just moved and won, so X (whose turn it is) loses.
+        assert_eq!(game.current_player(), Player::X);
+        assert_eq!(game.current_player_id(), 0);
     }
 
     #[test]

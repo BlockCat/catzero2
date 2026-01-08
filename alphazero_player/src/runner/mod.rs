@@ -1,6 +1,12 @@
-use crate::{config::RunnerConfig, runner::messages::GamePlayed};
+use crate::{
+    config::RunnerConfig,
+    runner::messages::{GamePlayed, GameResult},
+};
 use alphazero_nn::AlphaGame;
-use mcts::{AlphaZeroSelectionStrategy, DefaultAdjacencyTree, GameState, StateEvaluation, MCTS};
+use mcts::{
+    AlphaZeroSelectionStrategy, DefaultAdjacencyTree, GameState, StateEvaluation, TerminalResult,
+    MCTS,
+};
 use std::fmt::Debug;
 use thiserror::Error;
 use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
@@ -49,6 +55,8 @@ pub enum RunnerError {
     GameError(anyhow::Error),
     #[error("Operation was cancelled")]
     Cancellation,
+    #[error("GamePlayed construction error: {0}")]
+    GamePlayedError(String),
 }
 
 pub struct RunnerHandle {
@@ -132,6 +140,9 @@ impl RunnerService {
                         RunnerError::GameError(err) => {
                             tracing::error!("Runner task error: {:?}", err)
                         }
+                        RunnerError::GamePlayedError(err) => {
+                            tracing::error!("GamePlayed construction error: {}", err)
+                        }
                     }
                 }
             });
@@ -182,6 +193,9 @@ async fn start_runner<G: AlphaRunnable + 'static>(
             }
             Err(RunnerError::GameError(e)) => {
                 tracing::error!("Error during game play: {:?}", e);
+            }
+            Err(RunnerError::GamePlayedError(e)) => {
+                tracing::error!("Error constructing GamePlayed: {}", e);
             }
         }
     }
@@ -242,7 +256,19 @@ async fn play_a_game<G: AlphaRunnable + 'static>(
         })?;
     }
 
-    Err(RunnerError::Cancellation)
+    // With the assumption that it is two player zero-sum game
+    let value = state
+        .is_terminal()
+        .unwrap()
+        .to_player_zero_perspective(state.current_player_id());
+
+    let (value, winner) = match value {
+        TerminalResult::Win => (1.0, GameResult::Winner(0)),
+        TerminalResult::Loss => (-1.0, GameResult::Winner(1)),
+        TerminalResult::Draw => (0.0, GameResult::Draw),
+    };
+
+    GamePlayed::new(states, policies, taken_actions, value, winner)
 }
 
 impl Drop for RunnerHandle {

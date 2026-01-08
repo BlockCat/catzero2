@@ -1,6 +1,6 @@
 use crate::error::MCTSError::{self, MoveNotFound};
 use rand::{rng, seq::IteratorRandom};
-use std::{collections::HashMap, fmt::Debug, future::Future, iter::zip, time::Duration};
+use std::{collections::HashMap, fmt::Debug, future::Future, iter::zip, ops::Not, time::Duration};
 
 pub use error::{MCTSError as Error, Result};
 pub use selection::{AlphaZeroSelectionStrategy, SelectionStrategy};
@@ -142,7 +142,7 @@ impl<
         let (node, path, state, previous_state) = self.selection(state, &self.tree);
 
         if let Some(reward) = state.is_terminal() {
-            self.backpropagation(path, reward);
+            self.backpropagation(path, reward.into());
             return Ok(node);
         }
 
@@ -245,9 +245,51 @@ pub trait GameState: Clone + Default {
     fn get_possible_actions(&self) -> Vec<Self::Action>;
     fn take_action(&self, action: Self::Action) -> Self;
 
-    /// return Some(reward) if terminal, None otherwise. +1 for win, -1 for loss, 0 for draw
-    fn is_terminal(&self) -> Option<f32>;
+    /// return Some(reward) if terminal, None otherwise. +1 for win, -1 for loss, 0 for draw.
+    /// Seen from the perspective of the current player.
+    fn is_terminal(&self) -> Option<TerminalResult>;
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TerminalResult {
+    Win,
+    Loss,
+    Draw,
+}
+
+impl TerminalResult {
+    ///
+    pub fn to_player_zero_perspective(&self, player: usize) -> TerminalResult {
+        match player {
+            0 => *self,
+            1 => !*self,
+            _ => panic!("Invalid player id"),
+        }
+    }
+}
+
+impl From<TerminalResult> for f32 {
+    fn from(val: TerminalResult) -> Self {
+        match val {
+            TerminalResult::Win => 1.0,
+            TerminalResult::Loss => -1.0,
+            TerminalResult::Draw => 0.0,
+        }
+    }
+}
+
+impl Not for TerminalResult {
+    type Output = TerminalResult;
+
+    fn not(self) -> Self::Output {
+        match self {
+            TerminalResult::Win => TerminalResult::Loss,
+            TerminalResult::Loss => TerminalResult::Win,
+            TerminalResult::Draw => TerminalResult::Draw,
+        }
+    }
+}
+
 pub trait StateEvaluation<S: GameState> {
     fn evaluation(
         &self,
@@ -315,9 +357,9 @@ mod tests {
             }
         }
 
-        fn is_terminal(&self) -> Option<f32> {
+        fn is_terminal(&self) -> Option<TerminalResult> {
             if self.depth >= self.max_depth {
-                Some(self.value as f32 / 10.0)
+                Some(TerminalResult::Draw)
             } else {
                 None
             }
