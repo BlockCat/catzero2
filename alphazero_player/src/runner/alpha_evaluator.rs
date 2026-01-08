@@ -1,6 +1,7 @@
 use candle_core::Device;
 use mcts::{GameState, ModelEvaluation, StateEvaluation};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::{
     inference::{InferenceRequest, InferenceService},
@@ -8,13 +9,13 @@ use crate::{
 };
 
 pub struct AlphaEvaluator<G: AlphaRunnable> {
-    batcher: Arc<InferenceService>,
+    batcher: Arc<RwLock<InferenceService>>,
     device: Device,
     _marker: std::marker::PhantomData<G>,
 }
 
 impl<G: AlphaRunnable> AlphaEvaluator<G> {
-    pub fn new(batcher: Arc<InferenceService>, device: Device) -> Self {
+    pub fn new(batcher: Arc<RwLock<InferenceService>>, device: Device) -> Self {
         Self {
             batcher,
             device,
@@ -35,14 +36,17 @@ impl<G: AlphaRunnable + Send + Sync> StateEvaluation<G::GameState> for AlphaEval
 
         let tensor = G::encode_game_state(&states, &self.device);
 
-        let response = self
-            .batcher
+        let batcher = self.batcher.read().await;
+
+        let response = batcher
             .request(InferenceRequest {
-                player_id: state.current_player_id() as u32,
+                challenger: todo!("I have to somehow decide if this evaluation is for the challenger or the best model"),
                 state_tensor: tensor,
             })
             .await
             .map_err(|e| mcts::Error::UnknownError(format!("Inference request failed: {}", e)))?;
+
+        drop(batcher);
 
         let moves = state.get_possible_actions();
 

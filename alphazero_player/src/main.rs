@@ -18,7 +18,6 @@ mod api;
 mod config;
 mod error;
 mod inference;
-mod model_repository;
 mod runner;
 
 #[actix_web::main]

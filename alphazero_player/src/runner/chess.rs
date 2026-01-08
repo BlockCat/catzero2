@@ -10,6 +10,7 @@ use alphazero_nn::{AlphaGame, PolicyOutputType};
 use candle_core::{Device, Shape, Tensor};
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 /// Number of standard planes (current player, move count, castling rights (white/black) x (kingside/queenside))
 const STANDARD_PLANES: usize = 6; // ignoring no progress plane for now
@@ -122,7 +123,7 @@ impl AlphaGame for Chess {
 pub struct ChessConfig {
     pub num_iterations: usize,
     pub device: Device,
-    pub inference_service: Arc<InferenceService>,
+    pub inference_service: Arc<RwLock<InferenceService>>,
     pub discount_factor: f32,
     pub c1: f32,
     pub c2: f32,

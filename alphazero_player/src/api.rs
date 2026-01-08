@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{config::ApplicationConfig, inference::InferenceService, runner::RunnerService, Game};
 use actix_web::{get, http::header::ContentType, post, *};
 use candle_core::Device;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 #[get("/status")]
 async fn status(
@@ -39,7 +39,7 @@ async fn status(
 #[post("/play")]
 async fn start_play(
     data: web::Data<Arc<Mutex<RunnerService>>>,
-    inference_service: web::Data<Arc<InferenceService>>,
+    inference_service: web::Data<Arc<RwLock<InferenceService>>>,
     device: web::Data<Device>,
     req: web::Json<PlayGameRequest>,
 ) -> HttpResponse {
@@ -66,6 +66,7 @@ async fn start_play(
                 //     .unwrap();
 
                 use crate::runner::chess::{Chess, ChessConfig};
+
                 service.start::<Chess>(ChessConfig {
                     num_iterations: req.num_iterations,
                     c1: req.c1,
@@ -115,11 +116,35 @@ async fn stop_play(data: web::Data<Arc<Mutex<RunnerService>>>) -> HttpResponse {
 }
 
 #[post("/update_model")]
-async fn update_model(_model_data: web::Json<ModelUpdateRequest>) -> HttpResponse {
+async fn update_model(
+    model_data: web::Json<ModelUpdateRequest>,
+    inference_service: web::Data<Arc<RwLock<InferenceService>>>,
+) -> HttpResponse {
     // TODO: Implement model hot-swapping
     // 1. Load new model weights from the provided path or data
     // 2. Update the batcher's model reference
     // 3. Optionally restart runner to use new model immediately
+    let mut inference_service = inference_service.write().await;
+    match &model_data.mode {
+        ModelUpdateMode::SelfPlay { model_path } => {
+            let result = inference_service
+                .update_model(None, model_path, HashMap::new())
+                .await;
+        }
+        ModelUpdateMode::Evaluate {
+            best_model_path,
+            challenger_model_path,
+        } => {
+            // Load challenger model weights and set up evaluation
+
+            let result_best = inference_service
+                .update_model(Some(true), best_model_path, HashMap::new())
+                .await;
+            let result_challenger = inference_service
+                .update_model(Some(false), challenger_model_path, HashMap::new())
+                .await;
+        }
+    };
 
     HttpResponse::Ok().json(ServerMessage {
         message: "Model update endpoint not yet implemented. This will support hot-swapping neural network weights.".to_string(),
@@ -128,10 +153,19 @@ async fn update_model(_model_data: web::Json<ModelUpdateRequest>) -> HttpRespons
 
 #[derive(serde::Deserialize)]
 struct ModelUpdateRequest {
-    #[allow(dead_code)]
-    model_path: Option<String>,
-    #[allow(dead_code)]
-    model_data: Option<Vec<u8>>,
+    mode: ModelUpdateMode,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type")]
+enum ModelUpdateMode {
+    SelfPlay {
+        model_path: String,
+    },
+    Evaluate {
+        best_model_path: String,
+        challenger_model_path: String,
+    },
 }
 
 #[derive(serde::Serialize)]

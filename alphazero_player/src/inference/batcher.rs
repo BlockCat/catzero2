@@ -1,11 +1,14 @@
-use crate::config::InferenceConfig;
+use crate::{
+    config::InferenceConfig,
+    error::{Error, Result},
+};
 use alphazero_nn::AlphaZeroNN;
 use candle_core::{Tensor, D};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
-pub struct BatcherHandle(JoinHandle<Result<(), anyhow::Error>>, CancellationToken);
+pub struct BatcherHandle(JoinHandle<Result<()>>, CancellationToken);
 
 impl BatcherHandle {
     pub fn abort(&self) {
@@ -59,30 +62,31 @@ impl BatchService {
         BatcherHandle(tokio::spawn(async move { self.start_async(ct).await }), ct2)
     }
 
-    pub async fn start_async(
-        &mut self,
-        cancellation_token: CancellationToken,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn start_async(&mut self, cancellation_token: CancellationToken) -> Result<()> {
         tracing::info!("Batcher started");
         let max_batch_size = self.config.max_batch_size;
 
         let receiver = &mut self.request_receiver;
 
         while !cancellation_token.is_cancelled() {
-            tracing::info!("Batcher waiting for requests");
+            tracing::trace!("Batcher waiting for requests");
             let mut requests = Vec::with_capacity(max_batch_size);
 
             receiver.recv_many(&mut requests, max_batch_size).await;
 
-            tracing::info!("Batcher received {} requests", requests.len());
+            tracing::trace!("Batcher received {} requests", requests.len());
 
             let request_tensors = requests
                 .iter()
                 .map(|r| r.state_tensor.clone())
                 .collect::<Vec<_>>();
-            let batched_input = Tensor::stack(request_tensors.as_slice(), 0)?;
+            let batched_input = Tensor::stack(request_tensors.as_slice(), 0).map_err(|e| {
+                Error::InferenceError(format!("Failed to stack input tensors: {}", e))
+            })?;
 
-            let (policy, value) = self.model.forward_t(&batched_input, false)?;
+            let (policy, value) = self.model.forward_t(&batched_input, false).map_err(|e| {
+                Error::InferenceError(format!("Failed to execute forward pass: {}", e))
+            })?;
 
             requests.into_iter().enumerate().for_each(|(i, req)| {
                 let policy = policy.get(i).expect("Failed to get policy tensor");
