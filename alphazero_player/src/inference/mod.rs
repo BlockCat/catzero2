@@ -22,7 +22,7 @@ enum InferenceModus {
 
 #[derive(Debug)]
 pub enum InferenceModusRequest {
-    SinglePlayer(AlphaZeroNN),
+    SinglePlayer(Box<AlphaZeroNN>),
     Evaluator(Vec<AlphaZeroNN>),
 }
 
@@ -36,7 +36,7 @@ impl InferenceService {
             Some(InferenceModusRequest::Evaluator(models)) => {
                 let workers = models
                     .into_iter()
-                    .map(|model| InferenceWorker::new(model, config.clone()))
+                    .map(|model| InferenceWorker::new(Box::new(model), config.clone()))
                     .collect();
                 InferenceModus::Evaluator(workers)
             }
@@ -96,7 +96,7 @@ struct InferenceWorker {
 }
 
 impl InferenceWorker {
-    pub fn new(model: AlphaZeroNN, config: InferenceConfig) -> Self {
+    pub fn new(model: Box<AlphaZeroNN>, config: InferenceConfig) -> Self {
         let (batch_service, worker_sender) = BatchService::new(config, model);
         let handle = batch_service.start();
         Self {

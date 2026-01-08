@@ -21,7 +21,7 @@ mod tree;
 pub struct MCTS<S, A, TH, SS, SE>
 where
     S: GameState<Action = A>,
-    A: Clone,
+    A: Clone + Debug,
     TH: TreeHolder<A>,
     SS: SelectionStrategy<S, A>,
     SE: StateEvaluation<S>,
@@ -76,6 +76,8 @@ impl<
             futures::executor::block_on(self.search_once(state))?;
         }
 
+        // self.tree.debug();
+
         self.best_from_tree()
     }
 
@@ -101,8 +103,8 @@ impl<
 
     fn best_from_tree(&self) -> Result<A> {
         let tree = &self.tree;
-        let children = tree.children_visits(TreeIndex::root());
-        let children_rewards = tree.children_rewards(TreeIndex::root());
+        let children = tree.children_visits(TreeIndex::root())?;
+        let children_rewards = tree.children_rewards(TreeIndex::root())?;
 
         debug_assert_eq!(
             children.len(),
@@ -132,17 +134,19 @@ impl<
             .choose(&mut rng())
             .ok_or(MoveNotFound)?;
 
-        let best_child = tree.child_index(TreeIndex::root(), best_index);
+        let best_child = tree.child_index(TreeIndex::root(), best_index)?;
 
-        Ok(tree.action(best_child))
+        tree.action(best_child)
     }
 
     /// Perform a single MCTS search iteration, returning the index of the expanded node
     async fn search_once(&mut self, state: &S) -> Result<TreeIndex> {
+        let root_player = state.current_player_id();
         let (node, path, state, previous_state) = self.selection(state, &self.tree);
-
+        let current_player = state.current_player_id();
         if let Some(reward) = state.is_terminal() {
-            self.backpropagation(path, reward.into());
+            let reward = reward.to_player_perspective(root_player, current_player);
+            self.backpropagation(path, reward.into())?;
             return Ok(node);
         }
 
@@ -152,7 +156,7 @@ impl<
             .await?;
 
         self.expansion(node, node_evaluation.policy())?;
-        self.backpropagation(path, node_evaluation.value());
+        self.backpropagation(path, node_evaluation.value())?;
 
         Ok(node)
     }
@@ -188,16 +192,17 @@ impl<
         let (possible_actions, policy): (Vec<A>, Vec<f32>) =
             policy.iter().map(|(a, b)| (a.clone(), *b)).unzip();
 
-        self.tree.expand_node(node, &possible_actions, &policy);
+        self.tree.expand_node(node, &possible_actions, &policy)?;
         Ok(())
     }
 
-    fn backpropagation(&mut self, path: Vec<TreeIndex>, mut reward: f32) {
+    fn backpropagation(&mut self, path: Vec<TreeIndex>, mut reward: f32) -> Result<()> {
         for node_index in path.iter().rev() {
-            self.tree.update_node_value(*node_index, reward);
-            self.tree.increase_node_visit_count(*node_index);
+            self.tree.update_node_value(*node_index, reward)?;
+            self.tree.increase_node_visit_count(*node_index)?;
             reward = -reward * self.discount_factor;
         }
+        Ok(())
     }
 
     pub fn subtree_pruning(&mut self, action: A) -> Result<()> {
@@ -205,20 +210,20 @@ impl<
 
         let action_index = self
             .tree
-            .child_actions(TreeIndex::root())
+            .child_actions(TreeIndex::root())?
             .iter()
             .position(|a| a.as_ref() == Some(&action))
             .ok_or(MCTSError::MoveNotFound)?;
 
-        self.tree = self.tree.subtree(first_child_index.offset(action_index));
+        self.tree = self.tree.subtree(first_child_index.offset(action_index))?;
 
         Ok(())
     }
 
     pub fn get_action_probabilities(&self) -> Vec<(A, f32)> {
-        let actions = self.tree.child_actions(TreeIndex::root());
-        let rewards = self.tree.children_rewards(TreeIndex::root());
-        let visits = self.tree.children_visits(TreeIndex::root());
+        let actions = self.tree.child_actions(TreeIndex::root()).unwrap();
+        let rewards = self.tree.children_rewards(TreeIndex::root()).unwrap();
+        let visits = self.tree.children_visits(TreeIndex::root()).unwrap();
 
         zip(actions.iter(), zip(rewards.iter(), visits.iter()))
             .filter_map(|(action_opt, (reward, visit))| {
@@ -258,13 +263,8 @@ pub enum TerminalResult {
 }
 
 impl TerminalResult {
-    ///
-    pub fn to_player_zero_perspective(&self, player: usize) -> TerminalResult {
-        match player {
-            0 => *self,
-            1 => !*self,
-            _ => panic!("Invalid player id"),
-        }
+    pub fn to_player_perspective(&self, player: usize, state: usize) -> TerminalResult {
+        if player == state { *self } else { !*self }
     }
 }
 

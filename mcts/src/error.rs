@@ -15,4 +15,7 @@ pub enum MCTSError {
 
     #[error("An unspecified error occurred in the MCTS algorithm: {0}")]
     UnknownError(String),
+
+    #[error("The provided index {0} is out of range. Valid range is 0 to {1}.")]
+    OutOfRange(usize, usize),
 }

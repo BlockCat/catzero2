@@ -22,9 +22,12 @@ async fn status(
         None
     };
 
+    #[cfg(feature = "chess")]
+    let game = Game::Chess;
+
     ServerStatus {
         running: true,
-        game: Game::Chess,
+        game,
         playing: runner_service.is_running(),
         play_info,
         batch_info: BatchInfo {

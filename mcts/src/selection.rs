@@ -1,4 +1,4 @@
-use std::iter::zip;
+use std::{fmt::Debug, iter::zip};
 
 use rand::{rng, seq::IteratorRandom};
 
@@ -8,7 +8,7 @@ pub use alphazero::AlphaZeroSelectionStrategy;
 pub use random::RandomSelectionStrategy;
 pub use standard::StandardSelectionStrategy;
 
-pub trait SelectionStrategy<S, A> {
+pub trait SelectionStrategy<S, A: Debug> {
     fn select_child(
         &self,
         tree: &impl TreeHolder<A>,
@@ -18,6 +18,8 @@ pub trait SelectionStrategy<S, A> {
 }
 
 mod alphazero {
+    use std::fmt::Debug;
+
     use super::*;
     #[derive(Clone)]
     pub struct AlphaZeroSelectionStrategy {
@@ -36,17 +38,17 @@ mod alphazero {
         }
     }
 
-    impl<S, A> SelectionStrategy<S, A> for AlphaZeroSelectionStrategy {
+    impl<S, A: Debug> SelectionStrategy<S, A> for AlphaZeroSelectionStrategy {
         fn select_child(
             &self,
             tree: &impl TreeHolder<A>,
             _state: &S,
             index: TreeIndex,
         ) -> (A, TreeIndex) {
-            let parent_visit = tree.visit(index) as f32;
-            let children_visits = tree.children_visits(index);
-            let children_rewards = tree.children_rewards(index);
-            let children_priors = tree.children_priors(index);
+            let parent_visit = tree.visit(index).unwrap() as f32;
+            let children_visits = tree.children_visits(index).unwrap();
+            let children_rewards = tree.children_rewards(index).unwrap();
+            let children_priors = tree.children_priors(index).unwrap();
             let scores = alpha_zero_scores(
                 parent_visit,
                 children_visits,
@@ -68,8 +70,8 @@ mod alphazero {
                 .choose(&mut rng())
                 .expect("No best index found");
 
-            let child_index = tree.child_index(index, best_index);
-            let action = tree.action(child_index);
+            let child_index = tree.child_index(index, best_index).unwrap();
+            let action = tree.action(child_index).unwrap();
 
             (action, child_index)
         }
@@ -170,28 +172,32 @@ mod alphazero {
 }
 
 mod random {
+    use std::fmt::Debug;
+
     use super::*;
     pub struct RandomSelectionStrategy;
 
-    impl<S, A> SelectionStrategy<S, A> for RandomSelectionStrategy {
+    impl<S, A: Debug> SelectionStrategy<S, A> for RandomSelectionStrategy {
         fn select_child(
             &self,
             tree: &impl TreeHolder<A>,
             _state: &S,
             index: TreeIndex,
         ) -> (A, TreeIndex) {
-            let children_count = tree.children_visits(index).len();
+            let children_count = tree.children_visits(index).unwrap().len();
             let chosen_index = (0..children_count)
                 .choose(&mut rng())
                 .expect("No children to choose from");
-            let child_index = tree.child_index(index, chosen_index);
-            let action = tree.action(child_index);
+            let child_index = tree.child_index(index, chosen_index).unwrap();
+            let action = tree.action(child_index).unwrap();
             (action, child_index)
         }
     }
 }
 
 mod standard {
+    use std::fmt::Debug;
+
     use super::*;
     pub struct StandardSelectionStrategy {
         pub exploration_constant: f32,
@@ -205,16 +211,16 @@ mod standard {
         }
     }
 
-    impl<S, A> SelectionStrategy<S, A> for StandardSelectionStrategy {
+    impl<S, A: Debug> SelectionStrategy<S, A> for StandardSelectionStrategy {
         fn select_child(
             &self,
             tree: &impl TreeHolder<A>,
             _state: &S,
             index: TreeIndex,
         ) -> (A, TreeIndex) {
-            let parent_visit = tree.visit(index) as f32;
-            let children_visits = tree.children_visits(index);
-            let children_rewards = tree.children_rewards(index);
+            let parent_visit = tree.visit(index).unwrap() as f32;
+            let children_visits = tree.children_visits(index).unwrap();
+            let children_rewards = tree.children_rewards(index).unwrap();
 
             let scores = children_visits
                 .iter()
@@ -244,8 +250,8 @@ mod standard {
                 .choose(&mut rng())
                 .expect("No best index found");
 
-            let child_index = tree.child_index(index, best_index);
-            let action = tree.action(child_index);
+            let child_index = tree.child_index(index, best_index).unwrap();
+            let action = tree.action(child_index).unwrap();
 
             (action, child_index)
         }
@@ -272,10 +278,11 @@ mod standard {
 
             let actions = vec!['a', 'b', 'c'];
             let policy = vec![0.3, 0.5, 0.2];
-            tree.expand_node(TreeIndex::root(), &actions, &policy);
+            tree.expand_node(TreeIndex::root(), &actions, &policy)
+                .unwrap();
 
             // Visit the root
-            tree.increase_node_visit_count(TreeIndex::root());
+            tree.increase_node_visit_count(TreeIndex::root()).unwrap();
 
             let strategy = StandardSelectionStrategy::new(1.4);
             let state = MockState;
@@ -293,26 +300,27 @@ mod standard {
 
             let actions = vec![1, 2, 3];
             let policy = vec![0.3, 0.3, 0.4];
-            tree.expand_node(TreeIndex::root(), &actions, &policy);
+            tree.expand_node(TreeIndex::root(), &actions, &policy)
+                .unwrap();
 
             // Set up visits and rewards
-            tree.increase_node_visit_count(TreeIndex::root());
-            tree.increase_node_visit_count(TreeIndex::root());
-            tree.increase_node_visit_count(TreeIndex::root());
+            tree.increase_node_visit_count(TreeIndex::root()).unwrap();
+            tree.increase_node_visit_count(TreeIndex::root()).unwrap();
+            tree.increase_node_visit_count(TreeIndex::root()).unwrap();
 
-            let child1 = tree.child_index(TreeIndex::root(), 0);
-            let child2 = tree.child_index(TreeIndex::root(), 1);
-            let child3 = tree.child_index(TreeIndex::root(), 2);
+            let child1 = tree.child_index(TreeIndex::root(), 0).unwrap();
+            let child2 = tree.child_index(TreeIndex::root(), 1).unwrap();
+            let child3 = tree.child_index(TreeIndex::root(), 2).unwrap();
 
             // Give child2 the best reward
-            tree.increase_node_visit_count(child1);
-            tree.update_node_value(child1, 0.3);
+            tree.increase_node_visit_count(child1).unwrap();
+            tree.update_node_value(child1, 0.3).unwrap();
 
-            tree.increase_node_visit_count(child2);
-            tree.update_node_value(child2, 0.9);
+            tree.increase_node_visit_count(child2).unwrap();
+            tree.update_node_value(child2, 0.9).unwrap();
 
-            tree.increase_node_visit_count(child3);
-            tree.update_node_value(child3, 0.2);
+            tree.increase_node_visit_count(child3).unwrap();
+            tree.update_node_value(child3, 0.2).unwrap();
 
             // With very low exploration constant, should prefer best reward
             let strategy = StandardSelectionStrategy::new(0.01);
@@ -329,7 +337,8 @@ mod standard {
 
             let actions = vec!['x', 'y', 'z'];
             let policy = vec![0.3, 0.4, 0.3];
-            tree.expand_node(TreeIndex::root(), &actions, &policy);
+            tree.expand_node(TreeIndex::root(), &actions, &policy)
+                .unwrap();
 
             let strategy = RandomSelectionStrategy;
             let state = MockState;

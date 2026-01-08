@@ -63,7 +63,7 @@ impl ChessWrapper {
         // Simple evaluation: material count
 
         if self.0.status() == chess::BoardStatus::Checkmate {
-            return 1.0;
+            return -1.0;
         } else if self.0.status() == chess::BoardStatus::Stalemate {
             return 0.0;
         }
@@ -73,14 +73,14 @@ impl ChessWrapper {
             if let Some(piece) = self.0.piece_on(square) {
                 let color = self.0.color_on(square).unwrap();
                 let piece_value = match piece {
-                    chess::Piece::Pawn => 1.0,   //8
+                    chess::Piece::Pawn => 1.0,   //8*9=72 because of promotion
                     chess::Piece::Knight => 3.0, // 6
                     chess::Piece::Bishop => 3.0, // 6
                     chess::Piece::Rook => 5.0,   // 10
                     chess::Piece::Queen => 9.0,  // 9
                     chess::Piece::King => 0.0,
                 };
-                // max score: 8+6+6+10+9=39
+                // max score: 8*9+6+6+10+9=103
 
                 if color == self.0.side_to_move() {
                     score -= piece_value;
@@ -90,7 +90,7 @@ impl ChessWrapper {
             }
         }
 
-        score / 50.0
+        (score / 100.0f32).tanh()
     }
 }
 
@@ -159,8 +159,10 @@ mod tests {
         let mut game = ChessWrapper::new();
         game.0 = Board::from_str("r5r1/p2nR3/2k5/P1pn3p/7P/1RPP1PB1/5P2/5K2 w - - 1 32").unwrap();
 
+        const ITERS: usize = 10_000;
+
         let best_move = mtcs
-            .search_for_iterations(&game, 10_000)
+            .search_for_iterations(&game, ITERS)
             .expect("Could not find move?");
         assert_eq!(best_move.to_string(), "e7e6");
     }
@@ -178,11 +180,14 @@ mod tests {
         >::new(selection_strategy, state_evaluation, 0.9)
         .unwrap();
         let mut game = ChessWrapper::new();
+
+        const ITERS: usize = 10_000;
+
         game.0 =
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();
 
         let best_move = mtcs
-            .search_for_iterations(&game, 10_000)
+            .search_for_iterations(&game, ITERS)
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
         mtcs.subtree_pruning(best_move.clone()).unwrap();
@@ -228,8 +233,8 @@ mod tests {
                 .collect::<std::collections::HashMap<_, _>>();
 
             let value = match state.0.status() {
-                chess::BoardStatus::Stalemate => 0.1,
-                chess::BoardStatus::Checkmate => 1.0,
+                chess::BoardStatus::Stalemate => unreachable!(),
+                chess::BoardStatus::Checkmate => unreachable!(),
                 chess::BoardStatus::Ongoing => random_play(state),
             };
 
@@ -281,7 +286,7 @@ mod tests {
         let result = chess.is_terminal().unwrap();
         assert_eq!(result, TerminalResult::Loss);
         assert_eq!(
-            result.to_player_zero_perspective(chess.current_player_id()),
+            result.to_player_perspective(0, chess.current_player_id()),
             TerminalResult::Loss
         );
         assert_eq!(chess.current_player_id(), 0);
@@ -299,7 +304,7 @@ mod tests {
         let result = chess.is_terminal().unwrap();
         assert_eq!(result, TerminalResult::Loss);
         assert_eq!(
-            result.to_player_zero_perspective(chess.current_player_id()),
+            result.to_player_perspective(0, chess.current_player_id()),
             TerminalResult::Win
         );
         assert_eq!(chess.current_player_id(), 1);

@@ -260,7 +260,7 @@ async fn play_a_game<G: AlphaRunnable + 'static>(
     let value = state
         .is_terminal()
         .unwrap()
-        .to_player_zero_perspective(state.current_player_id());
+        .to_player_perspective(0, state.current_player_id());
 
     let (value, winner) = match value {
         TerminalResult::Win => (1.0, GameResult::Winner(0)),

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Debug};
 
 use crate::error::{MCTSError::TreeNodeInitializationFailed, Result};
 
@@ -20,7 +20,7 @@ impl TreeIndex {
     }
 }
 
-pub trait TreeHolder<A>: Default {
+pub trait TreeHolder<A: Debug>: Default {
     /// Returns whether the tree is empty.
     fn is_empty(&self) -> bool;
 
@@ -35,32 +35,61 @@ pub trait TreeHolder<A>: Default {
 
     /// Expands the node at `index` with the given possible actions, returning the index of the first
     /// child node.
-    fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32]) -> TreeIndex;
+    fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32])
+    -> Result<TreeIndex>;
 
     /// Updates the value of the node at `index` with the given reward.
-    fn update_node_value(&mut self, index: TreeIndex, reward: f32);
+    fn update_node_value(&mut self, index: TreeIndex, reward: f32) -> Result<()>;
 
     /// Increases the visit count of the node at `index` by one.
-    fn increase_node_visit_count(&mut self, index: TreeIndex);
+    fn increase_node_visit_count(&mut self, index: TreeIndex) -> Result<()>;
 
-    fn child_index(&self, parent: TreeIndex, child_offset: usize) -> TreeIndex;
+    fn child_index(&self, parent: TreeIndex, child_offset: usize) -> Result<TreeIndex>;
 
-    fn action(&self, index: TreeIndex) -> A;
+    fn action(&self, index: TreeIndex) -> Result<A>;
 
     /// Returns the visit count of the node at `index`.
-    fn visit(&self, index: TreeIndex) -> u32;
+    fn visit(&self, index: TreeIndex) -> Result<u32>;
 
     /// Returns the visit counts of the children of the node at `index`.
-    fn children_visits(&self, index: TreeIndex) -> &[u32];
+    fn children_visits(&self, index: TreeIndex) -> Result<&[u32]>;
     /// Returns the rewards of the children of the node at `index`.
-    fn children_rewards(&self, index: TreeIndex) -> &[f32];
+    fn children_rewards(&self, index: TreeIndex) -> Result<&[f32]>;
     /// Returns the actions of the children of the node at `index`.
-    fn child_actions(&self, index: TreeIndex) -> &[Option<A>];
+    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<A>]>;
 
     /// Returns the priors of the children of the node at `index`.
-    fn children_priors(&self, index: TreeIndex) -> &[f32];
+    fn children_priors(&self, index: TreeIndex) -> Result<&[f32]>;
 
-    fn subtree(&self, index: TreeIndex) -> Self;
+    fn subtree(&self, index: TreeIndex) -> Result<Self>;
+
+    fn debug_node_info(&self, index: TreeIndex) {
+        let children_len = self.children_visits(index).map(|x| x.len()).unwrap_or(0);
+        println!("Node Index: {:?}", index);
+        if children_len == 0 {
+            println!("Leaf Node");
+            return;
+        }
+        println!(
+            "Children: [{:?}, {:?}]",
+            self.child_index(index, 0),
+            self.child_index(index, children_len - 1)
+        );
+
+        println!("Visit Count: {}", self.visit(index).unwrap());
+        for i in 0..children_len {
+            let child_index = self.child_index(index, i).unwrap();
+            println!(
+                " Child {}: Action: {:?}, Visits: {}, Reward: {}",
+                i,
+                self.action(child_index).unwrap(),
+                self.visit(child_index).unwrap(),
+                self.children_rewards(index).unwrap()[i]
+            );
+        }
+    }
+
+    fn debug(&self) {}
 }
 
 #[derive(Clone)]
@@ -87,7 +116,7 @@ impl<A> Default for DefaultAdjacencyTree<A> {
     }
 }
 
-impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
+impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
     fn is_fully_expanded(&self, index: TreeIndex) -> bool {
         self.children_start_index[index.index()].is_some()
     }
@@ -110,13 +139,19 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         Ok(())
     }
 
-    fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32]) -> TreeIndex {
+    fn expand_node(
+        &mut self,
+        index: TreeIndex,
+        actions: &[A],
+        policy: &[f32],
+    ) -> Result<TreeIndex> {
         debug_assert_eq!(
             actions.len(),
             policy.len(),
             "Actions and policy length must match"
         );
         let start_index = self.actions.len();
+
         self.children_start_index[index.index()] = Some(TreeIndex::new(start_index));
         self.children_count[index.index()] = actions.len() as u32;
 
@@ -127,70 +162,72 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
         self.children_start_index.extend(vec![None; actions.len()]);
         self.children_count.extend(vec![0; actions.len()]);
 
-        TreeIndex::new(start_index)
+        Ok(TreeIndex::new(start_index))
     }
 
-    fn update_node_value(&mut self, index: TreeIndex, reward: f32) {
+    fn update_node_value(&mut self, index: TreeIndex, reward: f32) -> Result<()> {
         self.rewards[index.index()] += reward;
+        Ok(())
     }
 
-    fn increase_node_visit_count(&mut self, index: TreeIndex) {
+    fn increase_node_visit_count(&mut self, index: TreeIndex) -> Result<()> {
         self.visit_counts[index.index()] += 1;
+        Ok(())
     }
 
-    fn child_index(&self, parent: TreeIndex, child_offset: usize) -> TreeIndex {
-        self.children_start_index[parent.index()]
-            .expect("Parent node is not expanded")
-            .offset(child_offset)
+    fn child_index(&self, parent: TreeIndex, child_offset: usize) -> Result<TreeIndex> {
+        Ok(self.children_start_index[parent.index()]
+            .ok_or(TreeNodeInitializationFailed)?
+            .offset(child_offset))
     }
 
-    fn action(&self, index: TreeIndex) -> A {
+    fn action(&self, index: TreeIndex) -> Result<A> {
         self.actions[index.index()]
             .clone()
-            .expect("Action not found")
+            .ok_or(TreeNodeInitializationFailed)
     }
 
-    fn visit(&self, index: TreeIndex) -> u32 {
-        self.visit_counts[index.index()]
+    fn visit(&self, index: TreeIndex) -> Result<u32> {
+        Ok(self.visit_counts[index.index()])
     }
 
-    fn children_visits(&self, index: TreeIndex) -> &[u32] {
+    fn children_visits(&self, index: TreeIndex) -> Result<&[u32]> {
         let start_index = self.children_start_index[index.index()]
-            .expect("Node is not expanded")
+            .ok_or(TreeNodeInitializationFailed)?
             .index();
         let count = self.children_count[index.index()] as usize;
 
-        &self.visit_counts[start_index..start_index + count]
+        Ok(&self.visit_counts[start_index..start_index + count])
     }
 
-    fn children_rewards(&self, index: TreeIndex) -> &[f32] {
+    fn children_rewards(&self, index: TreeIndex) -> Result<&[f32]> {
         let start_index = self.children_start_index[index.index()]
-            .expect("Node is not expanded")
+            .ok_or(TreeNodeInitializationFailed)?
             .index();
         let count = self.children_count[index.index()] as usize;
 
-        &self.rewards[start_index..start_index + count]
+        Ok(&self.rewards[start_index..start_index + count])
     }
 
-    fn children_priors(&self, index: TreeIndex) -> &[f32] {
+    fn children_priors(&self, index: TreeIndex) -> Result<&[f32]> {
         let start_index = self.children_start_index[index.index()]
-            .expect("Node is not expanded")
+            .ok_or(TreeNodeInitializationFailed)?
             .index();
         let count = self.children_count[index.index()] as usize;
 
-        &self.policy[start_index..start_index + count]
+        Ok(&self.policy[start_index..start_index + count])
     }
 
-    fn child_actions(&self, index: TreeIndex) -> &[Option<A>] {
+    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<A>]> {
         let start_index = self.children_start_index[index.index()]
-            .expect("Node is not expanded")
+            .ok_or(TreeNodeInitializationFailed)?
             .index();
         let count = self.children_count[index.index()] as usize;
 
-        &self.actions[start_index..start_index + count]
+        Ok(&self.actions[start_index..start_index + count])
     }
 
-    fn subtree(&self, index: TreeIndex) -> Self {
+    fn subtree(&self, index: TreeIndex) -> Result<Self> {
         let mut new_tree = DefaultAdjacencyTree::default();
 
         let mut position_queue: VecDeque<(Option<A>, TreeIndex)> = VecDeque::new();
@@ -200,7 +237,7 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
             let children_count = self.children_count[source_index.index()];
 
             new_tree.actions.push(action);
-            new_tree.visit_counts.push(self.visit(source_index));
+            new_tree.visit_counts.push(self.visit(source_index)?);
             new_tree.rewards.push(-self.rewards[source_index.index()]);
             new_tree.policy.push(self.policy[source_index.index()]);
             new_tree.children_count.push(children_count);
@@ -225,11 +262,17 @@ impl<A: Clone> TreeHolder<A> for DefaultAdjacencyTree<A> {
             new_tree.children_start_index.push(child_start);
         }
 
-        new_tree
+        Ok(new_tree)
     }
 
     fn is_empty(&self) -> bool {
         self.actions.is_empty()
+    }
+
+    fn debug(&self) {
+        for i in 0..self.node_count() {
+            self.debug_node_info(TreeIndex::new(i));
+        }
     }
 }
 #[cfg(test)]
@@ -253,7 +296,7 @@ mod tests {
     fn test_default_adjacency_tree() {
         let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
         tree.init_root_node().unwrap();
-        assert_eq!(tree.visit(TreeIndex::root()), 0);
+        assert_eq!(tree.visit(TreeIndex::root()).unwrap(), 0);
         assert!(!tree.is_fully_expanded(TreeIndex::root()));
     }
 
@@ -263,7 +306,9 @@ mod tests {
         tree.init_root_node().unwrap();
         let actions = vec!['a', 'b', 'c'];
         let policy = vec![0.2, 0.5, 0.3];
-        let child_index = tree.expand_node(TreeIndex::root(), &actions, &policy);
+        let child_index = tree
+            .expand_node(TreeIndex::root(), &actions, &policy)
+            .unwrap();
         assert!(tree.is_fully_expanded(TreeIndex::root()));
         assert_eq!(child_index.index(), 1);
     }
@@ -274,12 +319,14 @@ mod tests {
         tree.init_root_node().unwrap();
         let actions = vec!['a', 'b'];
         let policy = vec![0.6, 0.4];
-        let child_index = tree.expand_node(TreeIndex::root(), &actions, &policy);
+        let child_index = tree
+            .expand_node(TreeIndex::root(), &actions, &policy)
+            .unwrap();
 
-        tree.increase_node_visit_count(child_index);
-        tree.update_node_value(child_index, 1.0);
+        tree.increase_node_visit_count(child_index).unwrap();
+        tree.update_node_value(child_index, 1.0).unwrap();
 
-        assert_eq!(tree.visit(child_index), 1);
+        assert_eq!(tree.visit(child_index).unwrap(), 1);
         assert_eq!(tree.rewards[child_index.index()], 1.0);
     }
 
@@ -289,17 +336,18 @@ mod tests {
         tree.init_root_node().unwrap();
         let actions = vec!['x', 'y', 'z'];
         let policy = vec![0.3, 0.4, 0.3];
-        tree.expand_node(TreeIndex::root(), &actions, &policy);
+        tree.expand_node(TreeIndex::root(), &actions, &policy)
+            .unwrap();
 
         for i in 0..3 {
-            let child = tree.child_index(TreeIndex::root(), i);
-            tree.increase_node_visit_count(child);
-            tree.update_node_value(child, (i + 1) as f32);
+            let child = tree.child_index(TreeIndex::root(), i).unwrap();
+            tree.increase_node_visit_count(child).unwrap();
+            tree.update_node_value(child, (i + 1) as f32).unwrap();
         }
 
-        let visits = tree.children_visits(TreeIndex::root());
-        let rewards = tree.children_rewards(TreeIndex::root());
-        let priors = tree.children_priors(TreeIndex::root());
+        let visits = tree.children_visits(TreeIndex::root()).unwrap();
+        let rewards = tree.children_rewards(TreeIndex::root()).unwrap();
+        let priors = tree.children_priors(TreeIndex::root()).unwrap();
 
         assert_eq!(visits, &[1, 1, 1]);
         assert_eq!(rewards, &[1.0, 2.0, 3.0]);
@@ -346,7 +394,7 @@ mod tests {
         tree.children_count
             .append(&mut nodes.iter().map(|x| x.5).collect());
 
-        let subtree = tree.subtree(TreeIndex::new(1)); // Subtree rooted at B
+        let subtree = tree.subtree(TreeIndex::new(1)).unwrap(); // Subtree rooted at B
 
         assert_eq!(subtree.actions.len(), 8);
         assert_eq!(subtree.visit_counts.len(), 8);
