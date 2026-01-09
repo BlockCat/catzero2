@@ -130,7 +130,10 @@ impl GameState for ChessWrapper {
 mod tests {
     use super::*;
     use chess::ChessMove;
-    use mcts::{Result, StateEvaluation, selection::StandardSelectionStrategy};
+    use mcts::{
+        DebugExporter, Result as MctsResult, StateEvaluation, selection::StandardSelectionStrategy,
+    };
+    use serde::ser::SerializeSeq;
     use std::str::FromStr as _;
 
     #[test]
@@ -144,22 +147,69 @@ mod tests {
         println!("{}", game.pretty_print());
     }
 
+    struct FileDebugExporter(String);
+
+    impl DebugExporter<ChessWrapper, mcts::DefaultAdjacencyTree<ChessMove>> for FileDebugExporter {
+        fn debug(
+            &self,
+            state: &ChessWrapper,
+            tree: &mcts::DefaultAdjacencyTree<ChessMove>,
+            node: &mcts::TreeIndex,
+            path: &Vec<mcts::TreeIndex>,
+            iteration: usize,
+        ) {
+            use std::fs::File;
+            use std::io::Write;
+
+            let file_path = format!("{}/{}", &self.0, state.0.get_hash());
+
+            std::fs::create_dir_all(&file_path).unwrap();
+
+            
+            let mut file = File::create_new(format!("{}/debug_{}.json", file_path, iteration)).unwrap();
+            let dump = FileDump {
+                state: state.clone(),
+                chosen_node: node.index(),
+                chosen_path: path.iter().map(|idx| idx.index()).collect(),
+                iteration,
+                policy: tree.policy.clone(),
+                visit_counts: tree.visit_counts.clone(),
+                rewards: tree.rewards.clone(),
+                actions: tree.actions.clone(),
+                children_start_index: tree.children_start_index.clone(),
+                children_count: tree.children_count.clone(),
+            };
+
+            let json_str = serde_json::to_string_pretty(&dump).unwrap();
+            file.write_all(json_str.as_bytes()).unwrap();
+            file.flush().unwrap();
+            
+        }
+    }
+
     #[test]
     fn test_find_mate_in_one() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let state_evaluation = ChessStateEvaluation;
         let mut mtcs = mcts::MCTS::<
             ChessWrapper,
-            ChessMove,
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
         >::new(selection_strategy, state_evaluation, 0.9)
-        .unwrap();
+        .unwrap()
+        .with_debugger(FileDebugExporter(format!(
+            "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m1/{}/",
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )));
+
         let mut game = ChessWrapper::new();
         game.0 = Board::from_str("r5r1/p2nR3/2k5/P1pn3p/7P/1RPP1PB1/5P2/5K2 w - - 1 32").unwrap();
 
-        const ITERS: usize = 10_000;
+        const ITERS: usize = 1_000;
 
         let best_move = mtcs
             .search_for_iterations(&game, ITERS)
@@ -173,15 +223,21 @@ mod tests {
         let state_evaluation = ChessStateEvaluation;
         let mut mtcs = mcts::MCTS::<
             ChessWrapper,
-            ChessMove,
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
         >::new(selection_strategy, state_evaluation, 0.9)
-        .unwrap();
+        .unwrap()
+        .with_debugger(FileDebugExporter(format!(
+            "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m2/{}/",
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )));
         let mut game = ChessWrapper::new();
 
-        const ITERS: usize = 10_000;
+        const ITERS: usize = 1_000;
 
         game.0 =
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();
@@ -199,7 +255,7 @@ mod tests {
 
         game = game.take_action(best_move);
         let best_move = mtcs
-            .search_for_iterations(&game, 10_000)
+            .search_for_iterations(&game, ITERS)
             .expect("Could not find move?");
         println!("Known positions: {}", mtcs.positions_expanded());
         mtcs.subtree_pruning(best_move.clone()).unwrap();
@@ -211,7 +267,7 @@ mod tests {
 
         game = game.take_action(best_move);
         let best_move = mtcs
-            .search_for_iterations(&game, 10_000)
+            .search_for_iterations(&game, ITERS)
             .expect("Could not find move?");
         assert_eq!(best_move.to_string(), "c2h7");
     }
@@ -223,7 +279,7 @@ mod tests {
             &self,
             state: &ChessWrapper,
             _previous_state: &[ChessWrapper],
-        ) -> Result<mcts::ModelEvaluation<ChessMove>> {
+        ) -> MctsResult<mcts::ModelEvaluation<ChessMove>> {
             let possible_actions = state.get_possible_actions();
             let action_count = possible_actions.len();
 
@@ -308,5 +364,70 @@ mod tests {
             TerminalResult::Win
         );
         assert_eq!(chess.current_player_id(), 1);
+    }
+
+    #[derive(serde::Serialize)]
+    struct FileDump {
+        #[serde(serialize_with = "serialize_chess_state")]
+        state: ChessWrapper,
+        iteration: usize,
+        chosen_node: usize,
+        chosen_path: Vec<usize>,
+
+        #[serde(serialize_with = "serialize_chess_moves")]
+        actions: Vec<Option<ChessMove>>,
+        visit_counts: Vec<u32>,
+        rewards: Vec<f32>,
+        policy: Vec<f32>,
+
+        #[serde(serialize_with = "serialize_tree_index")]
+        children_start_index: Vec<Option<mcts::TreeIndex>>,
+        children_count: Vec<u32>,
+    }
+
+    fn serialize_chess_state<S>(state: &ChessWrapper, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let board_str = format!("{}", state.0);
+        serializer.serialize_str(&board_str)
+    }
+
+    fn serialize_chess_moves<S>(
+        moves: &Vec<Option<ChessMove>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let move_strs: Vec<Option<String>> = moves
+            .iter()
+            .map(|mv_opt| mv_opt.map(|mv| mv.to_string()))
+            .collect();
+        let mut seq = serializer.serialize_seq(Some(move_strs.len()))?;
+        for mv_str in move_strs {
+            seq.serialize_element(&mv_str)?;
+        }
+        seq.end()
+    }
+
+    fn serialize_tree_index<S>(
+        indices: &Vec<Option<mcts::TreeIndex>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let index_vals: Vec<Option<usize>> = indices
+            .iter()
+            .map(|idx_opt| idx_opt.map(|idx| idx.index()))
+            .collect();
+        let mut seq = serializer.serialize_seq(Some(index_vals.len()))?;
+
+        for idx_val in index_vals {
+            seq.serialize_element(&idx_val)?;
+        }
+
+        seq.end()
     }
 }

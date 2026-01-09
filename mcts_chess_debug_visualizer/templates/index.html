@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCTS Debug Visualizer</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: Navigation -->
+        <div class="nav-panel">
+            <h2>Navigation</h2>
+            <div id="tree-view"></div>
+        </div>
+
+        <!-- Right Panel: Content -->
+        <div class="content-panel">
+            <!-- Top: Chess board and Tree side by side -->
+            <div class="top-content">
+                <!-- Chess Board -->
+                <div class="board-container">
+                    <h3>Chess Board</h3>
+                    <div id="board"></div>
+                    <div id="board-info"></div>
+                </div>
+
+                <!-- MCTS Tree -->
+                <div class="tree-container">
+                    <h3>MCTS Tree</h3>
+                    <div id="tree-svg-container">
+                        <svg id="tree-svg"></svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom: Navigation buttons -->
+            <div class="bottom-controls">
+                <button id="prev-btn" disabled>← Previous</button>
+                <span id="iteration-info">No iteration loaded</span>
+                <button id="next-btn" disabled>Next →</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

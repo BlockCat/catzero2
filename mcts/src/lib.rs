@@ -16,7 +16,7 @@ mod tree;
 /// - tree holder TH
 /// - selection strategy SS
 /// - state evaluation SE
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct MCTS<S, TH, SS, SE>
 where
     S: GameState,
@@ -29,6 +29,30 @@ where
     state_evaluation: SE,
     discount_factor: f32,
     tree: TH,
+    debugger: Option<Box<dyn DebugExporter<S, TH>>>,
+}
+
+pub trait DebugExporter<S, TH>: Send + Sync {
+    fn debug(
+        &self,
+        state: &S,
+        tree: &TH,
+        node: &TreeIndex,
+        path: &Vec<TreeIndex>,
+        iteration: usize,
+    );
+}
+
+impl<S, TH> DebugExporter<S, TH> for () {
+    fn debug(
+        &self,
+        _state: &S,
+        _tree: &TH,
+        _node: &TreeIndex,
+        _path: &Vec<TreeIndex>,
+        _iteration: usize,
+    ) {
+    }
 }
 
 impl<
@@ -47,7 +71,13 @@ impl<
             state_evaluation,
             discount_factor,
             tree,
+            debugger: None,
         })
+    }
+
+    pub fn with_debugger<D: DebugExporter<S, TH> + 'static>(mut self, debugger: D) -> Self {
+        self.debugger = Some(Box::new(debugger));
+        self
     }
 
     pub fn positions_expanded(&self) -> usize {
@@ -62,8 +92,8 @@ impl<
         let tree = &mut self.tree;
 
         let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
-        for _ in 0..positions_left {
-            self.search_once(state).await?;
+        for i in 0..positions_left {
+            self.search_once(state, i).await?;
         }
 
         self.best_from_tree()
@@ -73,8 +103,9 @@ impl<
         let tree = &mut self.tree;
 
         let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
-        for _ in 0..positions_left {
-            futures::executor::block_on(self.search_once(state))?;
+
+        for i in 0..positions_left {
+            futures::executor::block_on(self.search_once(state, i))?;
         }
 
         // self.tree.debug();
@@ -88,9 +119,11 @@ impl<
         duration: Duration,
     ) -> Result<S::Action> {
         let start = std::time::Instant::now();
+        let mut counter = 0;
 
         while start.elapsed() < duration {
-            self.search_once(state).await?;
+            self.search_once(state, counter).await?;
+            counter += 1;
         }
 
         self.best_from_tree()
@@ -98,9 +131,11 @@ impl<
 
     pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Result<S::Action> {
         let start = std::time::Instant::now();
+        let mut counter = 0;
 
         while start.elapsed() < duration {
-            futures::executor::block_on(self.search_once(state))?;
+            futures::executor::block_on(self.search_once(state, counter))?;
+            counter += 1;
         }
 
         self.best_from_tree()
@@ -145,13 +180,18 @@ impl<
     }
 
     /// Perform a single MCTS search iteration, returning the index of the expanded node
-    async fn search_once(&mut self, state: &S) -> Result<TreeIndex> {
-        let root_player = state.current_player_id();
-        let (node, path, state, previous_state) = self.selection(state, &self.tree);
+    async fn search_once(&mut self, root_state: &S, i: usize) -> Result<TreeIndex> {
+        let root_player = root_state.current_player_id();
+        let (node, path, state, previous_state) = self.selection(root_state, &self.tree);
         let current_player = state.current_player_id();
         if let Some(reward) = state.is_terminal() {
             let reward = reward.to_player_perspective(root_player, current_player);
-            self.backpropagation(path, reward.into())?;
+            self.backpropagation(path.clone(), reward.into())?;
+
+            if let Some(debugger) = &self.debugger {
+                debugger.debug(&root_state, &self.tree, &node, &path, i);
+            }
+
             return Ok(node);
         }
 
@@ -161,7 +201,11 @@ impl<
             .await?;
 
         self.expansion(node, node_evaluation.policy())?;
-        self.backpropagation(path, node_evaluation.value())?;
+        self.backpropagation(path.clone(), node_evaluation.value())?;
+
+        if let Some(debugger) = &self.debugger {
+            debugger.debug(&root_state, &self.tree, &node, &path, i);
+        }
 
         Ok(node)
     }

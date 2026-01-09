@@ -157,6 +157,13 @@ impl InferenceService {
             }
         }
     }
+
+    pub fn has_models(&self) -> bool {
+        match &self.modus {
+            InferenceModus::None => false,
+            _ => true,
+        }
+    }
 }
 
 struct InferenceWorker {

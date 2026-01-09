@@ -231,6 +231,8 @@ dependencies = [
  "chess",
  "mcts",
  "rand 0.9.2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

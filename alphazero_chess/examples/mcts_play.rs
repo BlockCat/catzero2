@@ -8,7 +8,6 @@ fn main() {
     let state_evaluation = ChessStateEvaluation;
     let mut mtcs = mcts::MCTS::<
         ChessWrapper,
-        ChessMove,
         mcts::DefaultAdjacencyTree<ChessMove>,
         StandardSelectionStrategy,
         ChessStateEvaluation,

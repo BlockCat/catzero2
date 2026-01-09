@@ -16,6 +16,7 @@ async fn status(
             threads: config.runner_config.threads,
             games_played: runner_service.games_played() as u32,
             games_playing: runner_service.games_playing() as u32,
+            play_modus: PlayModus::SelfPlay,
             models: vec![],
         })
     } else {
@@ -47,6 +48,12 @@ async fn start_play(
     if service.is_running() {
         return HttpResponse::Ok().json(ServerMessage {
             message: "Play is already running".to_string(),
+        });
+    }
+
+    if !inference_service.read().await.has_models() {
+        return HttpResponse::BadRequest().json(ServerMessage {
+            message: "No models loaded in inference service".to_string(),
         });
     }
 
@@ -186,7 +193,14 @@ struct PlayingInfo {
     threads: usize,
     games_played: u32,
     games_playing: u32,
+    play_modus: PlayModus,
     models: Vec<ModelInfo>,
+}
+
+#[derive(serde::Serialize)]
+enum PlayModus {
+    SelfPlay,
+    Evaluate,
 }
 
 #[derive(serde::Serialize)]
