@@ -24,6 +24,12 @@ function initializeBoard() {
 function setupEventListeners() {
     $('#prev-btn').click(loadPrevious);
     $('#next-btn').click(loadNext);
+    $('#goto-btn').click(goToIteration);
+    $('#goto-input').on('keypress', function(e) {
+        if (e.which === 13) { // Enter key
+            goToIteration();
+        }
+    });
 }
 
 // Load the directory tree
@@ -385,9 +391,33 @@ function loadNext() {
     }
 }
 
+function goToIteration() {
+    const targetIteration = parseInt($('#goto-input').val());
+    
+    if (isNaN(targetIteration) || targetIteration < 0) {
+        alert('Please enter a valid iteration number');
+        return;
+    }
+    
+    if (targetIteration >= allStates) {
+        alert(`Iteration ${targetIteration} does not exist. Maximum iteration is ${allStates - 1}`);
+        return;
+    }
+    
+    loadState(currentPath, targetIteration);
+}
+
 function updateNavigationButtons() {
-    $('#prev-btn').prop('disabled', currentIndex <= 0);
-    $('#next-btn').prop('disabled', currentIndex >= allStates.length - 1 || allStates.length === 0);
+    const hasData = currentPath !== null && allStates > 0;
+    
+    $('#prev-btn').prop('disabled', currentIndex <= 0 || !hasData);
+    $('#next-btn').prop('disabled', currentIndex >= allStates - 1 || !hasData);
+    $('#goto-btn').prop('disabled', !hasData);
+    $('#goto-input').prop('disabled', !hasData);
+    
+    if (hasData) {
+        $('#goto-input').attr('max', allStates - 1);
+    }
 }
 
 function updateIterationInfo() {
