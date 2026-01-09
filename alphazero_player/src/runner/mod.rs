@@ -217,7 +217,6 @@ async fn play_a_game<G: AlphaRunnable + 'static>(
 
     let mut mcts: MCTS<
         G::GameState,
-        G::MoveType,
         DefaultAdjacencyTree<G::MoveType>,
         AlphaZeroSelectionStrategy,
         G::StateEvaluation,

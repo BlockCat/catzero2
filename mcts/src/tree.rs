@@ -20,7 +20,8 @@ impl TreeIndex {
     }
 }
 
-pub trait TreeHolder<A: Debug>: Default {
+pub trait TreeHolder: Default {
+    type Action: Debug;
     /// Returns whether the tree is empty.
     fn is_empty(&self) -> bool;
 
@@ -35,8 +36,12 @@ pub trait TreeHolder<A: Debug>: Default {
 
     /// Expands the node at `index` with the given possible actions, returning the index of the first
     /// child node.
-    fn expand_node(&mut self, index: TreeIndex, actions: &[A], policy: &[f32])
-    -> Result<TreeIndex>;
+    fn expand_node(
+        &mut self,
+        index: TreeIndex,
+        actions: &[Self::Action],
+        policy: &[f32],
+    ) -> Result<TreeIndex>;
 
     /// Updates the value of the node at `index` with the given reward.
     fn update_node_value(&mut self, index: TreeIndex, reward: f32) -> Result<()>;
@@ -46,7 +51,7 @@ pub trait TreeHolder<A: Debug>: Default {
 
     fn child_index(&self, parent: TreeIndex, child_offset: usize) -> Result<TreeIndex>;
 
-    fn action(&self, index: TreeIndex) -> Result<A>;
+    fn action(&self, index: TreeIndex) -> Result<Self::Action>;
 
     /// Returns the visit count of the node at `index`.
     fn visit(&self, index: TreeIndex) -> Result<u32>;
@@ -56,7 +61,7 @@ pub trait TreeHolder<A: Debug>: Default {
     /// Returns the rewards of the children of the node at `index`.
     fn children_rewards(&self, index: TreeIndex) -> Result<&[f32]>;
     /// Returns the actions of the children of the node at `index`.
-    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<A>]>;
+    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<Self::Action>]>;
 
     /// Returns the priors of the children of the node at `index`.
     fn children_priors(&self, index: TreeIndex) -> Result<&[f32]>;
@@ -116,7 +121,8 @@ impl<A> Default for DefaultAdjacencyTree<A> {
     }
 }
 
-impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
+impl<A: Clone + Debug> TreeHolder for DefaultAdjacencyTree<A> {
+    type Action = A;
     fn is_fully_expanded(&self, index: TreeIndex) -> bool {
         self.children_start_index[index.index()].is_some()
     }
@@ -142,7 +148,7 @@ impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
     fn expand_node(
         &mut self,
         index: TreeIndex,
-        actions: &[A],
+        actions: &[Self::Action],
         policy: &[f32],
     ) -> Result<TreeIndex> {
         debug_assert_eq!(
@@ -181,7 +187,7 @@ impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
             .offset(child_offset))
     }
 
-    fn action(&self, index: TreeIndex) -> Result<A> {
+    fn action(&self, index: TreeIndex) -> Result<Self::Action> {
         self.actions[index.index()]
             .clone()
             .ok_or(TreeNodeInitializationFailed)
@@ -218,7 +224,7 @@ impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
         Ok(&self.policy[start_index..start_index + count])
     }
 
-    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<A>]> {
+    fn child_actions(&self, index: TreeIndex) -> Result<&[Option<Self::Action>]> {
         let start_index = self.children_start_index[index.index()]
             .ok_or(TreeNodeInitializationFailed)?
             .index();
@@ -230,7 +236,7 @@ impl<A: Clone + Debug> TreeHolder<A> for DefaultAdjacencyTree<A> {
     fn subtree(&self, index: TreeIndex) -> Result<Self> {
         let mut new_tree = DefaultAdjacencyTree::default();
 
-        let mut position_queue: VecDeque<(Option<A>, TreeIndex)> = VecDeque::new();
+        let mut position_queue: VecDeque<(Option<Self::Action>, TreeIndex)> = VecDeque::new();
         position_queue.push_back((self.actions[index.index()].clone(), index));
 
         while let Some((action, source_index)) = position_queue.pop_front() {

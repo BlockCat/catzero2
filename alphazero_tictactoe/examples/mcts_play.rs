@@ -10,7 +10,6 @@ fn main() {
     let state_evaluation = TicTacToeStateEvaluation;
     let mut mcts = mcts::MCTS::<
         TicTacToe,
-        Move,
         mcts::DefaultAdjacencyTree<Move>,
         StandardSelectionStrategy,
         TicTacToeStateEvaluation,

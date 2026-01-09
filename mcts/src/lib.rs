@@ -13,20 +13,18 @@ mod tree;
 /// Monte Carlo Tree Search implementation
 /// Generic over:
 /// - state S
-/// - action A
 /// - tree holder TH
 /// - selection strategy SS
 /// - state evaluation SE
 #[derive(Clone)]
-pub struct MCTS<S, A, TH, SS, SE>
+pub struct MCTS<S, TH, SS, SE>
 where
-    S: GameState<Action = A>,
-    A: Clone + Debug,
-    TH: TreeHolder<A>,
-    SS: SelectionStrategy<S, A>,
+    S: GameState,
+    TH: TreeHolder<Action = S::Action>,
+    SS: SelectionStrategy<S>,
     SE: StateEvaluation<S>,
 {
-    _phantom: std::marker::PhantomData<(S, A, TH)>,
+    _phantom: std::marker::PhantomData<(S, TH)>,
     selection_strategy: SS,
     state_evaluation: SE,
     discount_factor: f32,
@@ -34,12 +32,11 @@ where
 }
 
 impl<
-    S: GameState<Action = A>,
-    A: Clone + Debug + PartialEq,
-    TH: TreeHolder<A>,
-    SS: SelectionStrategy<S, A>,
+    S: GameState,
+    TH: TreeHolder<Action = S::Action>,
+    SS: SelectionStrategy<S>,
     SE: StateEvaluation<S>,
-> MCTS<S, A, TH, SS, SE>
+> MCTS<S, TH, SS, SE>
 {
     pub fn new(selection_strategy: SS, state_evaluation: SE, discount_factor: f32) -> Result<Self> {
         let mut tree = TH::default();
@@ -57,7 +54,11 @@ impl<
         self.tree.node_count()
     }
 
-    pub async fn search_for_iterations_async(&mut self, state: &S, iterations: usize) -> Result<A> {
+    pub async fn search_for_iterations_async(
+        &mut self,
+        state: &S,
+        iterations: usize,
+    ) -> Result<S::Action> {
         let tree = &mut self.tree;
 
         let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
@@ -68,7 +69,7 @@ impl<
         self.best_from_tree()
     }
 
-    pub fn search_for_iterations(&mut self, state: &S, iterations: usize) -> Result<A> {
+    pub fn search_for_iterations(&mut self, state: &S, iterations: usize) -> Result<S::Action> {
         let tree = &mut self.tree;
 
         let positions_left = iterations.saturating_sub(tree.node_count()) + 1;
@@ -81,7 +82,11 @@ impl<
         self.best_from_tree()
     }
 
-    pub async fn search_for_duration_async(&mut self, state: &S, duration: Duration) -> Result<A> {
+    pub async fn search_for_duration_async(
+        &mut self,
+        state: &S,
+        duration: Duration,
+    ) -> Result<S::Action> {
         let start = std::time::Instant::now();
 
         while start.elapsed() < duration {
@@ -91,7 +96,7 @@ impl<
         self.best_from_tree()
     }
 
-    pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Result<A> {
+    pub fn search_for_duration(&mut self, state: &S, duration: Duration) -> Result<S::Action> {
         let start = std::time::Instant::now();
 
         while start.elapsed() < duration {
@@ -101,7 +106,7 @@ impl<
         self.best_from_tree()
     }
 
-    fn best_from_tree(&self) -> Result<A> {
+    fn best_from_tree(&self) -> Result<S::Action> {
         let tree = &self.tree;
         let children = tree.children_visits(TreeIndex::root())?;
         let children_rewards = tree.children_rewards(TreeIndex::root())?;
@@ -183,13 +188,13 @@ impl<
         (current_index, path, state, previous_state)
     }
 
-    fn expansion(&mut self, node: TreeIndex, policy: &HashMap<A, f32>) -> Result<()> {
+    fn expansion(&mut self, node: TreeIndex, policy: &HashMap<S::Action, f32>) -> Result<()> {
         if policy.is_empty() {
             tracing::error!("Expansion policy is empty");
             return Err(MCTSError::ExpansionError);
         }
 
-        let (possible_actions, policy): (Vec<A>, Vec<f32>) =
+        let (possible_actions, policy): (Vec<S::Action>, Vec<f32>) =
             policy.iter().map(|(a, b)| (a.clone(), *b)).unzip();
 
         self.tree.expand_node(node, &possible_actions, &policy)?;
@@ -205,7 +210,7 @@ impl<
         Ok(())
     }
 
-    pub fn subtree_pruning(&mut self, action: A) -> Result<()> {
+    pub fn subtree_pruning(&mut self, action: S::Action) -> Result<()> {
         let first_child_index = TreeIndex::new(1); // first child
 
         let action_index = self
@@ -220,7 +225,7 @@ impl<
         Ok(())
     }
 
-    pub fn get_action_probabilities(&self) -> Vec<(A, f32)> {
+    pub fn get_action_probabilities(&self) -> Vec<(S::Action, f32)> {
         let actions = self.tree.child_actions(TreeIndex::root()).unwrap();
         let rewards = self.tree.children_rewards(TreeIndex::root()).unwrap();
         let visits = self.tree.children_visits(TreeIndex::root()).unwrap();
@@ -238,12 +243,12 @@ impl<
                     )
                 })
             })
-            .collect::<Vec<(A, f32)>>()
+            .collect::<Vec<(S::Action, f32)>>()
     }
 }
 
 pub trait GameState: Clone + Default {
-    type Action;
+    type Action: Clone + Debug + PartialEq;
 
     fn current_player_id(&self) -> usize;
 
@@ -393,7 +398,7 @@ mod tests {
     fn test_mcts_initialization() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         assert_eq!(mcts.positions_expanded(), 1); // Root node
@@ -403,7 +408,7 @@ mod tests {
     fn test_mcts_search_iterations() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         let game = TestGame::default();
@@ -417,7 +422,7 @@ mod tests {
     fn test_mcts_search_duration() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         let game = TestGame::default();
@@ -432,7 +437,7 @@ mod tests {
     fn test_mcts_best_from_tree() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         let game = TestGame::default();
@@ -448,7 +453,7 @@ mod tests {
     fn test_mcts_get_action_probabilities() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         let game = TestGame::default();
@@ -468,7 +473,7 @@ mod tests {
     fn test_mcts_subtree_pruning() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.9).unwrap();
 
         let game = TestGame::default();
@@ -514,7 +519,7 @@ mod tests {
     fn test_backpropagation_discount() {
         let selection_strategy = StandardSelectionStrategy::new(1.4);
         let evaluator = TestEvaluator;
-        let mut mcts: MCTS<TestGame, i32, DefaultAdjacencyTree<i32>, _, _> =
+        let mut mcts: MCTS<TestGame, DefaultAdjacencyTree<i32>, _, _> =
             MCTS::new(selection_strategy, evaluator, 0.5).unwrap(); // discount factor 0.5
 
         let game = TestGame::default();

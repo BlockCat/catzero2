@@ -1,24 +1,26 @@
-use std::{fmt::Debug, iter::zip};
+use std::iter::zip;
 
 use rand::{rng, seq::IteratorRandom};
 
-use crate::tree::{TreeHolder, TreeIndex};
+use crate::{
+    GameState,
+    tree::{TreeHolder, TreeIndex},
+};
 
 pub use alphazero::AlphaZeroSelectionStrategy;
 pub use random::RandomSelectionStrategy;
 pub use standard::StandardSelectionStrategy;
 
-pub trait SelectionStrategy<S, A: Debug> {
+pub trait SelectionStrategy<S: GameState> {
     fn select_child(
         &self,
-        tree: &impl TreeHolder<A>,
+        tree: &impl TreeHolder<Action = S::Action>,
         state: &S,
         index: TreeIndex,
-    ) -> (A, TreeIndex);
+    ) -> (S::Action, TreeIndex);
 }
 
 mod alphazero {
-    use std::fmt::Debug;
 
     use super::*;
     #[derive(Clone)]
@@ -38,13 +40,13 @@ mod alphazero {
         }
     }
 
-    impl<S, A: Debug> SelectionStrategy<S, A> for AlphaZeroSelectionStrategy {
+    impl<S: GameState> SelectionStrategy<S> for AlphaZeroSelectionStrategy {
         fn select_child(
             &self,
-            tree: &impl TreeHolder<A>,
+            tree: &impl TreeHolder<Action = S::Action>,
             _state: &S,
             index: TreeIndex,
-        ) -> (A, TreeIndex) {
+        ) -> (S::Action, TreeIndex) {
             let parent_visit = tree.visit(index).unwrap() as f32;
             let children_visits = tree.children_visits(index).unwrap();
             let children_rewards = tree.children_rewards(index).unwrap();
@@ -172,18 +174,17 @@ mod alphazero {
 }
 
 mod random {
-    use std::fmt::Debug;
 
     use super::*;
     pub struct RandomSelectionStrategy;
 
-    impl<S, A: Debug> SelectionStrategy<S, A> for RandomSelectionStrategy {
+    impl<S: GameState> SelectionStrategy<S> for RandomSelectionStrategy {
         fn select_child(
             &self,
-            tree: &impl TreeHolder<A>,
+            tree: &impl TreeHolder<Action = S::Action>,
             _state: &S,
             index: TreeIndex,
-        ) -> (A, TreeIndex) {
+        ) -> (S::Action, TreeIndex) {
             let children_count = tree.children_visits(index).unwrap().len();
             let chosen_index = (0..children_count)
                 .choose(&mut rng())
@@ -196,7 +197,6 @@ mod random {
 }
 
 mod standard {
-    use std::fmt::Debug;
 
     use super::*;
     pub struct StandardSelectionStrategy {
@@ -211,13 +211,13 @@ mod standard {
         }
     }
 
-    impl<S, A: Debug> SelectionStrategy<S, A> for StandardSelectionStrategy {
+    impl<S: GameState> SelectionStrategy<S> for StandardSelectionStrategy {
         fn select_child(
             &self,
-            tree: &impl TreeHolder<A>,
+            tree: &impl TreeHolder<Action = S::Action>,
             _state: &S,
             index: TreeIndex,
-        ) -> (A, TreeIndex) {
+        ) -> (S::Action, TreeIndex) {
             let parent_visit = tree.visit(index).unwrap() as f32;
             let children_visits = tree.children_visits(index).unwrap();
             let children_rewards = tree.children_rewards(index).unwrap();
@@ -262,8 +262,28 @@ mod standard {
         use super::super::*;
         use crate::tree::DefaultAdjacencyTree;
 
-        #[derive(Clone)]
+        #[derive(Clone, Debug, Default)]
         struct MockState;
+
+        impl GameState for MockState {
+            type Action = char;
+
+            fn current_player_id(&self) -> usize {
+                todo!()
+            }
+
+            fn get_possible_actions(&self) -> Vec<Self::Action> {
+                todo!()
+            }
+
+            fn take_action(&self, _action: Self::Action) -> Self {
+                todo!()
+            }
+
+            fn is_terminal(&self) -> Option<crate::TerminalResult> {
+                todo!()
+            }
+        }
 
         #[test]
         fn test_standard_selection_strategy_creation() {
@@ -295,10 +315,10 @@ mod standard {
 
         #[test]
         fn test_standard_selection_prefers_best_reward() {
-            let mut tree: DefaultAdjacencyTree<i32> = DefaultAdjacencyTree::default();
+            let mut tree: DefaultAdjacencyTree<char> = DefaultAdjacencyTree::default();
             tree.init_root_node().unwrap();
 
-            let actions = vec![1, 2, 3];
+            let actions = vec!['a', 'b', 'c'];
             let policy = vec![0.3, 0.3, 0.4];
             tree.expand_node(TreeIndex::root(), &actions, &policy)
                 .unwrap();
@@ -327,7 +347,7 @@ mod standard {
             let state = MockState;
             let (action, _) = strategy.select_child(&tree, &state, TreeIndex::root());
 
-            assert_eq!(action, 2);
+            assert_eq!(action, 'c');
         }
 
         #[test]
