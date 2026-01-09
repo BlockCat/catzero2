@@ -246,6 +246,11 @@ body {
     fill: #4ec9b0;
 }
 
+.node.collapsed circle {
+    fill: #858585;
+    stroke: #d4d4d4;
+}
+
 .node.highlighted circle {
     fill: #f9e64f;
     stroke: #ffcc00;
@@ -262,6 +267,11 @@ body {
     font-size: 11px;
     fill: #d4d4d4;
     font-family: 'Courier New', monospace;
+}
+
+.collapse-control {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .link {

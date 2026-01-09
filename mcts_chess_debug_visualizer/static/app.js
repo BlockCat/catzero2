@@ -4,6 +4,7 @@ let allStates = 0;
 let currentIndex = -1;
 let board = null;
 let game = null;
+let collapsedNodes = new Set(); // Track collapsed nodes by their ID
 
 // Initialize the application
 $(document).ready(function() {
@@ -214,8 +215,21 @@ function visualizeTree(nodes, data) {
     const svg = d3.select('#tree-svg');
     svg.selectAll('*').remove();
     
+    // Auto-collapse nodes with only 1 visit (unless they're in the chosen path)
+    nodes.forEach((node, id) => {
+        if (node.visits <= 1 && node.children.length > 0 && !data.chosen_path.includes(id)) {
+            collapsedNodes.add(id);
+        }
+    });
+    
+    // Create tree layout with collapsed nodes filtered
+    const root = d3.hierarchy({children: [buildHierarchy(nodes, 0, true)]});
+    
+    // Calculate height based on visible nodes
+    const visibleNodeCount = root.descendants().length;
+    const nodeHeight = 40; // Spacing between nodes
     const width = 2000;
-    const height = Math.max(1000, nodes.length * 20);
+    const height = Math.max(800, visibleNodeCount * nodeHeight);
     
     svg.attr('width', width)
        .attr('height', height);
@@ -223,8 +237,6 @@ function visualizeTree(nodes, data) {
     const g = svg.append('g')
                  .attr('transform', 'translate(50, 50)');
     
-    // Create tree layout
-    const root = d3.hierarchy({children: [buildHierarchy(nodes, 0)]});
     const treeLayout = d3.tree().size([height - 100, width - 200]);
     
     treeLayout(root);
@@ -271,6 +283,9 @@ function visualizeTree(nodes, data) {
             if (d.data.id === data.chosen_node) {
                 classes += ' chosen';
             }
+            if (d.data.hasCollapsedChildren) {
+                classes += ' collapsed';
+            }
             return classes;
         })
         .attr('transform', d => `translate(${d.y},${d.x})`)
@@ -281,6 +296,25 @@ function visualizeTree(nodes, data) {
     node.append('circle')
         .attr('r', 8);
     
+    // Add collapse/expand control for nodes with children
+    node.filter(d => nodes[d.data.id] && nodes[d.data.id].children.length > 0)
+        .append('text')
+        .attr('class', 'collapse-control')
+        .attr('x', 12)
+        .attr('y', 0)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'start')
+        .style('font-size', '14px')
+        .style('font-weight', 'bold')
+        .style('fill', '#ffffff')
+        .style('cursor', 'pointer')
+        .style('pointer-events', 'all')
+        .text(d => collapsedNodes.has(d.data.id) ? '+' : '−')
+        .on('click', function(event, d) {
+            event.stopPropagation();
+            toggleNodeCollapse(d.data.id, nodes, data);
+        });
+    
     node.append('text')
         .attr('dy', -12)
         .attr('text-anchor', 'middle')
@@ -289,10 +323,10 @@ function visualizeTree(nodes, data) {
     node.append('text')
         .attr('dy', 20)
         .attr('text-anchor', 'middle')
-        .text(d => `R:${d.data.reward?.toFixed(2) ?? 0 / d.data.visits ?? 1}`);
+        .text(d => `R:${d.data.reward?.toFixed(2) ?? 0}`);
 }
 
-function buildHierarchy(nodes, nodeId) {
+function buildHierarchy(nodes, nodeId, respectCollapsed = false) {
     const node = nodes[nodeId];
     const result = {
         id: nodeId,
@@ -300,16 +334,34 @@ function buildHierarchy(nodes, nodeId) {
         visits: node.visits,
         reward: node.reward,
         policy: node.policy,
-        children: []
+        children: [],
+        hasCollapsedChildren: false
     };
+    
+    // If this node is collapsed and we're respecting collapsed state, don't include children
+    if (respectCollapsed && collapsedNodes.has(nodeId)) {
+        result.hasCollapsedChildren = node.children.length > 0;
+        return result;
+    }
     
     node.children.forEach(childId => {
         if (nodes[childId]) {
-            result.children.push(buildHierarchy(nodes, childId));
+            result.children.push(buildHierarchy(nodes, childId, respectCollapsed));
         }
     });
     
     return result;
+}
+
+function toggleNodeCollapse(nodeId, nodes, data) {
+    if (collapsedNodes.has(nodeId)) {
+        collapsedNodes.delete(nodeId);
+    } else {
+        collapsedNodes.add(nodeId);
+    }
+    
+    // Re-render the tree
+    visualizeTree(nodes, data);
 }
 
 function isInChosenPath(sourceId, targetId, chosenPath) {
@@ -373,8 +425,7 @@ function findPathToNode(nodeId, data) {
 
 function loadPrevious() {
     if (currentIndex > 0) {
-        const prevState = allStates[currentIndex - 1];
-        loadState(prevState.path, currentIndex - 1);
+        loadState(currentPath, currentIndex - 1);
         
         // Update active state in tree
         $(`.tree-node.state[data-index="${currentIndex - 1}"]`).click();
@@ -383,7 +434,6 @@ function loadPrevious() {
 
 function loadNext() {
     if (currentIndex < allStates - 1) {
-        const nextState = currentIndex + 1;
         loadState(currentPath, currentIndex + 1);
         
         // Update active state in tree
