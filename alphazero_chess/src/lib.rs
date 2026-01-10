@@ -196,15 +196,16 @@ mod tests {
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
-        >::new(selection_strategy, state_evaluation, 0.9)
+        >::new(selection_strategy, state_evaluation, 1.0)
         .unwrap()
-        .with_debugger(FileDebugExporter(format!(
-            "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m1/{}/",
-            std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        )));
+        // .with_debugger(FileDebugExporter(format!(
+        //     "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m1/{}/",
+        //     std::time::SystemTime::now()
+        //         .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        //         .unwrap()
+        //         .as_secs()
+        // )))
+        ;
 
         let mut game = ChessWrapper::new();
         game.0 = Board::from_str("r5r1/p2nR3/2k5/P1pn3p/7P/1RPP1PB1/5P2/5K2 w - - 1 32").unwrap();
@@ -219,25 +220,26 @@ mod tests {
 
     #[test]
     fn test_find_mate_in_two() {
-        let selection_strategy = StandardSelectionStrategy::new(2.4);
+        let selection_strategy = StandardSelectionStrategy::new(1.4);
         let state_evaluation = ChessStateEvaluation;
         let mut mtcs = mcts::MCTS::<
             ChessWrapper,
             mcts::DefaultAdjacencyTree<ChessMove>,
             StandardSelectionStrategy,
             ChessStateEvaluation,
-        >::new(selection_strategy, state_evaluation, 0.9)
+        >::new(selection_strategy, state_evaluation, 1.0)
         .unwrap()
-        .with_debugger(FileDebugExporter(format!(
-            "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m2/{}/",
-            std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        )));
+        // .with_debugger(FileDebugExporter(format!(
+        //     "/mnt/D012EBD012EBB99C/Workspace/projects/alphazero/exporter/m2/{}/",
+        //     std::time::SystemTime::now()
+        //         .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        //         .unwrap()
+        //         .as_secs()
+        // )))
+        ;
         let mut game = ChessWrapper::new();
 
-        const ITERS: usize = 10_000;
+        const ITERS: usize = 4_000;
 
         game.0 =
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();

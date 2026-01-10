@@ -154,6 +154,8 @@ body {
 
 #tree-svg {
     display: block;
+    shape-rendering: optimizeSpeed;
+    text-rendering: optimizeSpeed;
 }
 
 /* Bottom Controls */
@@ -267,11 +269,30 @@ body {
     font-size: 11px;
     fill: #d4d4d4;
     font-family: 'Courier New', monospace;
+    pointer-events: none;
+}
+
+.node-stats {
+    font-size: 11px;
+}
+
+.action-label {
+    font-size: 11px;
+    fill: #9cdcfe;
 }
 
 .collapse-control {
     user-select: none;
     -webkit-user-select: none;
+}
+
+.focus-control {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.focus-control:hover {
+    fill: #ffcc00 !important;
 }
 
 .link {

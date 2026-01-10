@@ -167,7 +167,20 @@ function updateBoard(fen) {
 
 function renderTree(data) {
     const nodes = buildTreeStructure(data);
+    
+    // Only auto-collapse on initial load, not on toggles
+    autoCollapseUnvisitedNodes(nodes, data);
+    
     visualizeTree(nodes, data);
+}
+
+function autoCollapseUnvisitedNodes(nodes, data) {
+    // Auto-collapse nodes with only 1 visit (unless they're in the chosen path)
+    nodes.forEach((node, id) => {
+        if (node.visits <= 1 && node.children.length > 0 && !data.chosen_path.includes(id)) {
+            collapsedNodes.add(id);
+        }
+    });
 }
 
 function buildTreeStructure(data) {
@@ -215,13 +228,6 @@ function visualizeTree(nodes, data) {
     const svg = d3.select('#tree-svg');
     svg.selectAll('*').remove();
     
-    // Auto-collapse nodes with only 1 visit (unless they're in the chosen path)
-    nodes.forEach((node, id) => {
-        if (node.visits <= 1 && node.children.length > 0 && !data.chosen_path.includes(id)) {
-            collapsedNodes.add(id);
-        }
-    });
-    
     // Create tree layout with collapsed nodes filtered
     const root = d3.hierarchy({children: [buildHierarchy(nodes, 0, true)]});
     
@@ -241,9 +247,14 @@ function visualizeTree(nodes, data) {
     
     treeLayout(root);
     
-    // Draw links
-    const link = g.selectAll('.link')
-        .data(root.links())
+    // Draw links (batched for performance)
+    const linkData = root.links();
+    const linkPath = d3.linkHorizontal()
+        .x(d => d.y)
+        .y(d => d.x);
+    
+    g.selectAll('.link')
+        .data(linkData)
         .enter()
         .append('path')
         .attr('class', d => {
@@ -251,9 +262,7 @@ function visualizeTree(nodes, data) {
             const targetId = d.target.data.id;
             return isInChosenPath(sourceId, targetId, data.chosen_path) ? 'link highlighted' : 'link';
         })
-        .attr('d', d3.linkHorizontal()
-            .x(d => d.y)
-            .y(d => d.x));
+        .attr('d', linkPath);
     
     // Draw nodes
     const node = g.selectAll('.node')
@@ -300,31 +309,50 @@ function visualizeTree(nodes, data) {
             toggleNodeCollapse(d.data.id, nodes, data);
         });
     
+    // Add "focus" control to collapse all other nodes
+    node.append('text')
+        .attr('class', 'focus-control')
+        .attr('x', 24)
+        .attr('y', 0)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'start')
+        .style('font-size', '12px')
+        .style('font-weight', 'bold')
+        .style('fill', '#ffa500')
+        .style('cursor', 'pointer')
+        .style('pointer-events', 'all')
+        .text('◉')
+        .on('click', function(event, d) {
+            event.stopPropagation();
+            focusOnPath(d.data.id, nodes, data);
+        });
+    
     // Add action label to the left of nodes (except root)
     node.filter(d => d.data.action !== null)
         .append('text')
         .attr('class', 'action-label')
         .attr('x', -12)
         .attr('y', 0)
-        .attr('dy', '0.35em')
         .attr('text-anchor', 'end')
-        .style('font-size', '11px')
-        .style('fill', '#9cdcfe')
-        .style('font-family', 'Courier New, monospace')
         .text(d => {
             const action = d.data.action || '';
             const policy = (d.data.policy * 100).toFixed(1);
             return `${action} (${policy}%)`;
         });
     
-    node.append('text')
+    // Combine visit and reward into single text element for performance
+    const statsText = node.append('text')
+        .attr('class', 'node-stats')
+        .attr('text-anchor', 'middle');
+    
+    statsText.append('tspan')
+        .attr('x', 0)
         .attr('dy', -12)
-        .attr('text-anchor', 'middle')
         .text(d => `V:${d.data.visits ?? 0}`);
     
-    node.append('text')
-        .attr('dy', 20)
-        .attr('text-anchor', 'middle')
+    statsText.append('tspan')
+        .attr('x', 0)
+        .attr('dy', 32)
         .text(d => `R:${d.data.reward?.toFixed(2) ?? 0}`);
 }
 
@@ -362,8 +390,231 @@ function toggleNodeCollapse(nodeId, nodes, data) {
         collapsedNodes.add(nodeId);
     }
     
-    // Re-render the tree
-    visualizeTree(nodes, data);
+    // Show loading indicator
+    const svg = d3.select('#tree-svg');
+    svg.style('opacity', '0.5');
+    
+    // Make the tree redraw truly async by breaking it into steps
+    setTimeout(() => {
+        requestAnimationFrame(() => {
+            visualizeTreeAsync(nodes, data).then(() => {
+                svg.style('opacity', '1');
+            });
+        });
+    }, 0);
+}
+
+function focusOnPath(targetNodeId, nodes, data) {
+    // Find path from root to target node
+    const pathToTarget = findPathToNodeById(targetNodeId, nodes);
+    
+    // Collapse all nodes with children that are not in the path
+    nodes.forEach((node, id) => {
+        if (node.children.length > 0 && !pathToTarget.includes(id)) {
+            collapsedNodes.add(id);
+        }
+    });
+    
+    // Expand all nodes in the path
+    pathToTarget.forEach(id => {
+        collapsedNodes.delete(id);
+    });
+    
+    // Show loading indicator and redraw
+    const svg = d3.select('#tree-svg');
+    svg.style('opacity', '0.5');
+    
+    setTimeout(() => {
+        requestAnimationFrame(() => {
+            visualizeTreeAsync(nodes, data).then(() => {
+                svg.style('opacity', '1');
+            });
+        });
+    }, 0);
+}
+
+function findPathToNodeById(targetId, nodes) {
+    const path = [targetId];
+    let current = targetId;
+    
+    // Walk up the tree to find the path to root
+    while (current !== 0) {
+        let found = false;
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const childStart = node.children[0];
+            
+            // Check if current is a child of node i
+            if (node.children.includes(current)) {
+                path.unshift(i);
+                current = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found) break;
+    }
+    
+    return path;
+}
+
+async function visualizeTreeAsync(nodes, data) {
+    const svg = d3.select('#tree-svg');
+    
+    // Clear in first frame
+    await new Promise(resolve => {
+        requestAnimationFrame(() => {
+            svg.selectAll('*').remove();
+            resolve();
+        });
+    });
+    
+    // Build hierarchy in next frame
+    const root = await new Promise(resolve => {
+        requestAnimationFrame(() => {
+            const result = d3.hierarchy({children: [buildHierarchy(nodes, 0, true)]});
+            resolve(result);
+        });
+    });
+    
+    // Calculate dimensions and layout
+    const visibleNodeCount = root.descendants().length;
+    const nodeHeight = 40;
+    const width = 2000;
+    const height = Math.max(800, visibleNodeCount * nodeHeight);
+    
+    svg.attr('width', width)
+       .attr('height', height);
+    
+    const g = svg.append('g')
+                 .attr('transform', 'translate(50, 50)');
+    
+    const treeLayout = d3.tree().size([height - 100, width - 200]);
+    treeLayout(root);
+    
+    // Draw in chunks to avoid blocking
+    await drawTreeElements(g, root, nodes, data);
+}
+
+async function drawTreeElements(g, root, nodes, data) {
+    // Draw links
+    await new Promise(resolve => {
+        requestAnimationFrame(() => {
+            const linkData = root.links();
+            const linkPath = d3.linkHorizontal()
+                .x(d => d.y)
+                .y(d => d.x);
+            
+            g.selectAll('.link')
+                .data(linkData)
+                .enter()
+                .append('path')
+                .attr('class', d => {
+                    const sourceId = d.source.data.id;
+                    const targetId = d.target.data.id;
+                    return isInChosenPath(sourceId, targetId, data.chosen_path) ? 'link highlighted' : 'link';
+                })
+                .attr('d', linkPath);
+            resolve();
+        });
+    });
+    
+    // Draw nodes
+    await new Promise(resolve => {
+        requestAnimationFrame(() => {
+            const node = g.selectAll('.node')
+                .data(root.descendants())
+                .enter()
+                .append('g')
+                .attr('class', d => {
+                    let classes = 'node';
+                    if (data.chosen_path.includes(d.data.id)) {
+                        classes += ' highlighted';
+                    }
+                    if (d.data.id === data.chosen_node) {
+                        classes += ' chosen';
+                    }
+                    if (d.data.hasCollapsedChildren) {
+                        classes += ' collapsed';
+                    }
+                    return classes;
+                })
+                .attr('transform', d => `translate(${d.y},${d.x})`)
+                .on('click', function(event, d) {
+                    handleNodeClick(d.data, data);
+                });
+            
+            node.append('circle')
+                .attr('r', 8);
+            
+            // Add collapse/expand control for nodes with children
+            node.filter(d => nodes[d.data.id] && nodes[d.data.id].children.length > 0)
+                .append('text')
+                .attr('class', 'collapse-control')
+                .attr('x', 12)
+                .attr('y', 0)
+                .attr('dy', '0.35em')
+                .attr('text-anchor', 'start')
+                .style('font-size', '14px')
+                .style('font-weight', 'bold')
+                .style('fill', '#ffffff')
+                .style('cursor', 'pointer')
+                .style('pointer-events', 'all')
+                .text(d => collapsedNodes.has(d.data.id) ? '+' : '−')
+                .on('click', function(event, d) {
+                    event.stopPropagation();
+                    toggleNodeCollapse(d.data.id, nodes, data);
+                });
+            
+            // Add "focus" control to collapse all other nodes
+            node.append('text')
+                .attr('class', 'focus-control')
+                .attr('x', 12)
+                .attr('y', -12)
+                .attr('text-anchor', 'start')
+                .style('font-size', '12px')
+                .style('font-weight', 'bold')
+                .style('fill', '#ffa500')
+                .style('cursor', 'pointer')
+                .style('pointer-events', 'all')
+                .text('◉')
+                .attr('title', 'Focus on path to this node')
+                .on('click', function(event, d) {
+                    event.stopPropagation();
+                    focusOnPath(d.data.id, nodes, data);
+                });
+            
+            // Add action label to the left of nodes (except root)
+            node.filter(d => d.data.action !== null)
+                .append('text')
+                .attr('class', 'action-label')
+                .attr('x', -12)
+                .attr('y', 0)
+                .attr('text-anchor', 'end')
+                .text(d => {
+                    const action = d.data.action || '';
+                    const policy = (d.data.policy * 100).toFixed(1);
+                    return `${action} (${policy}%)`;
+                });
+            
+            // Combine visit and reward into single text element for performance
+            const statsText = node.append('text')
+                .attr('class', 'node-stats')
+                .attr('text-anchor', 'middle');
+            
+            statsText.append('tspan')
+                .attr('x', 0)
+                .attr('dy', -12)
+                .text(d => `V:${d.data.visits ?? 0}`);
+            
+            statsText.append('tspan')
+                .attr('x', 0)
+                .attr('dy', 32)
+                .text(d => `R:${d.data.reward?.toFixed(2) ?? 0}`);
+            
+            resolve();
+        });
+    });
 }
 
 function isInChosenPath(sourceId, targetId, chosenPath) {
