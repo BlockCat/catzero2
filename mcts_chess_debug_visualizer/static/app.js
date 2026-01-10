@@ -255,21 +255,6 @@ function visualizeTree(nodes, data) {
             .x(d => d.y)
             .y(d => d.x));
     
-    // Draw edge labels
-    g.selectAll('.edge-label')
-        .data(root.links())
-        .enter()
-        .append('text')
-        .attr('class', 'edge-label')
-        .attr('x', d => (d.source.y + d.target.y) / 2)
-        .attr('y', d => (d.source.x + d.target.x) / 2 - 5)
-        .text(d => {
-            const node = d.target.data;
-            const action = node.action || '';
-            const policy = (node.policy * 100).toFixed(1);
-            return `${action} (${policy}%)`;
-        });
-    
     // Draw nodes
     const node = g.selectAll('.node')
         .data(root.descendants())
@@ -313,6 +298,23 @@ function visualizeTree(nodes, data) {
         .on('click', function(event, d) {
             event.stopPropagation();
             toggleNodeCollapse(d.data.id, nodes, data);
+        });
+    
+    // Add action label to the left of nodes (except root)
+    node.filter(d => d.data.action !== null)
+        .append('text')
+        .attr('class', 'action-label')
+        .attr('x', -12)
+        .attr('y', 0)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'end')
+        .style('font-size', '11px')
+        .style('fill', '#9cdcfe')
+        .style('font-family', 'Courier New, monospace')
+        .text(d => {
+            const action = d.data.action || '';
+            const policy = (d.data.policy * 100).toFixed(1);
+            return `${action} (${policy}%)`;
         });
     
     node.append('text')

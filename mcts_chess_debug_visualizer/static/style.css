@@ -285,10 +285,10 @@ body {
     stroke-width: 3px;
 }
 
-.edge-label {
-    font-size: 10px;
-    fill: #9cdcfe;
-    font-family: 'Courier New', monospace;
+.action-label {
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none;
 }
 
 /* Scrollbar styling */

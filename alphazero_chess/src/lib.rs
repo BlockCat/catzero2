@@ -237,7 +237,7 @@ mod tests {
         )));
         let mut game = ChessWrapper::new();
 
-        const ITERS: usize = 1_000;
+        const ITERS: usize = 10_000;
 
         game.0 =
             Board::from_str("rn3rk1/pp3pp1/2pbb3/4N3/2PPN3/8/PPQ2Pq1/R3K2R w KQ - 0 15").unwrap();
